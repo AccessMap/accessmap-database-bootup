@@ -102,16 +102,14 @@ TODO:
 DROP TABLE IF EXISTS intersection_groups;
 
 CREATE TABLE intersection_groups AS SELECT *
-                                      FROM (SELECT DISTINCT
-                                                         ON (e.id)
-                                                            e.id AS e_id, -- end id
-                                                            i.id AS i_id, -- intersection id
-                                                            e.geom AS e_geom, -- end geom POINT
-                                                            i.geom AS i_geom  -- intersection geom POINT
-                                                       FROM sidewalk_ends AS e
-                                                 INNER JOIN intersections AS i
-                                                         ON ST_DWithin(e.geom, i.geom, 100)
-                                                   ORDER BY e.id, ST_Distance(e.geom, i.geom)) AS q
+                                      FROM (SELECT DISTINCT ON (e.id) e.id AS e_id, -- end id
+                                                                      i.id AS i_id, -- intersection id
+                                                                      e.geom AS e_geom, -- end geom POINT
+                                                                      i.geom AS i_geom  -- intersection geom POINT
+                                                          FROM sidewalk_ends AS e
+                                                    INNER JOIN intersections AS i
+                                                            ON ST_DWithin(e.geom, i.geom, 100)
+                                                      ORDER BY e.id, ST_Distance(e.geom, i.geom)) AS q
                                   ORDER BY q.i_id, ST_Azimuth(q.i_geom, q.e_geom);
 
 

@@ -29,13 +29,12 @@ CREATE INDEX sidewalk_ends_index ON sidewalk_ends USING gist(geom);
 DROP TABLE IF EXISTS intersection_groups;
 
 CREATE TABLE intersection_groups AS SELECT *
-                                      FROM (SELECT DISTINCT ON (e.id)
-                                                               e.id AS e_id, -- end id
-                                                               i.id AS i_id, -- intersection id
-                                                               e.geom AS e_geom, -- end geom POINT
-                                                               i.geom AS i_geom,  -- intersection geom POINT
-                                                               e.sw_type AS e_type,
-                                                               e.sw_id AS e_s_id
+                                      FROM (SELECT DISTINCT ON (e.id) e.id AS e_id, -- end id
+                                                                      i.id AS i_id, -- intersection id
+                                                                      e.geom AS e_geom, -- end geom POINT
+                                                                      i.geom AS i_geom,  -- intersection geom POINT
+                                                                      e.sw_type AS e_type,
+                                                                      e.sw_id AS e_s_id
                                                           FROM sidewalk_ends AS e
                                                     INNER JOIN (SELECT *
                                                                   FROM intersections
@@ -50,21 +49,20 @@ CREATE TABLE intersection_groups AS SELECT *
 UPDATE intersection_groups
    SET i_id = result.i_id,
        i_geom = result.i_geom
-  FROM (SELECT DISTINCT ON (q.e_id)
-                            q.e_id AS e_id,
-                            i.id AS i_id,
-                            i.geom AS i_geom
-                       FROM (SELECT t1.*
-                                 FROM intersection_groups t1,
-                                      intersection_groups t2
-                                WHERE t1.i_id = t2.i_id
-                                  AND t1.e_s_id = t2.e_s_id
-                                  AND t1.e_type!=t2.e_type
-                                  AND ST_Distance(t1.e_geom, t1.i_geom) > ST_Distance(t2.e_geom, t2.i_geom)) AS q
-                  LEFT JOIN intersections AS i
-                         ON i.id != q.i_id
-                        AND ST_DWithin(q.e_geom, i.geom,200)
-                   ORDER BY q.e_id, ST_Distance(q.e_geom, i.geom)) AS result
+  FROM (SELECT DISTINCT ON (q.e_id) q.e_id AS e_id,
+                                    i.id AS i_id,
+                                    i.geom AS i_geom
+                      FROM (SELECT t1.*
+                              FROM intersection_groups t1,
+                                   intersection_groups t2
+                             WHERE t1.i_id = t2.i_id
+                               AND t1.e_s_id = t2.e_s_id
+                               AND t1.e_type!=t2.e_type
+                               AND ST_Distance(t1.e_geom, t1.i_geom) > ST_Distance(t2.e_geom, t2.i_geom)) AS q
+                 LEFT JOIN intersections AS i
+                        ON i.id != q.i_id
+                       AND ST_DWithin(q.e_geom, i.geom,200)
+                  ORDER BY q.e_id, ST_Distance(q.e_geom, i.geom)) AS result
  WHERE result.e_id = intersection_groups.e_id;
 
 DELETE FROM intersection_groups

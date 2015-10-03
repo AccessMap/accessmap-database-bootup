@@ -19,7 +19,8 @@ DROP TABLE IF EXISTS boundary_polygons CASCADE;
 CREATE TABLE boundary_polygons AS
       SELECT g.path[1] as gid, geom
         FROM (SELECT (ST_Dump(ST_Polygonize(picked_sidewalks.geom))).*
-      	        FROM (SELECT DISTINCT ON (s.id) s.id, s.geom
+      	        FROM (SELECT DISTINCT ON (s.id) s.id,
+                                                s.geom
       		                        FROM streets s
       		                   LEFT JOIN sidewalks r
                                       ON s.id = r.segkey
@@ -95,13 +96,12 @@ CREATE VIEW union_polygons AS SELECT q.path[1] AS id,
 -- For each unassigned to the closest polygons
 UPDATE grouped_sidewalks
    SET b_id = query.b_id
-  FROM (SELECT DISTINCT
-                     ON (s.s_id) s.s_id as s_id,
-                         u.id as b_id
-                   FROM (SELECT *
-                           FROM grouped_sidewalks
-                          WHERE b_id IS NULL) AS s
-             INNER JOIN union_polygons AS u
-                     ON u.id=s.b_id
-               ORDER BY s.s_id, ST_Distance(s.s_geom, u.geom)) AS query
+  FROM (SELECT DISTINCT ON (s.s_id) s.s_id as s_id,
+                                    u.id as b_id
+                      FROM (SELECT *
+                              FROM grouped_sidewalks
+                             WHERE b_id IS NULL) AS s
+                INNER JOIN union_polygons AS u
+                        ON u.id=s.b_id
+                  ORDER BY s.s_id, ST_Distance(s.s_geom, u.geom)) AS query
  WHERE grouped_sidewalks.s_id = query.s_id;
