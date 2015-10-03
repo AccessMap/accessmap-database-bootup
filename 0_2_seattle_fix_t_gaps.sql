@@ -1,3 +1,4 @@
+-- TODO: refactor to remove redundant intermediate steps
 -----------------------------------------------------------------------------
 -- Step 1: Function to find the largest angle between streets in intersection
 -----------------------------------------------------------------------------
