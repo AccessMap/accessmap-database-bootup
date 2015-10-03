@@ -40,14 +40,13 @@ DELETE FROM boundary_polygons
                     HAVING count(b1.gid) > 1);
 
 -- Step1: Find all sidewalks what are within a polygons
--- FIXME: This is a slow step (the slowest in this section). Speed it up!
 DROP TABLE IF EXISTS grouped_sidewalks;
 
 CREATE TABLE grouped_sidewalks AS SELECT b.gid AS b_id,
                                          s.id AS s_id,
                                          s.geom AS s_geom
                                     FROM sidewalks AS s
-                               LEFT JOIN boundary_polygons AS b
+                              INNER JOIN boundary_polygons AS b
                                       ON ST_Within(s.geom, b.geom);
 --    LIMIT 10000;
 
