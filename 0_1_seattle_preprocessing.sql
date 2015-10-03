@@ -18,6 +18,7 @@
 DROP TABLE IF EXISTS streets;
 DROP TABLE IF EXISTS sidewalks;
 DROP TABLE IF EXISTS intersections;
+DROP TABLE IF EXISTS curbramps;
 
 
 -----------------------------------
@@ -99,3 +100,17 @@ CREATE INDEX intersections_index
 
 ALTER TABLE intersections
         ADD PRIMARY KEY (id);
+
+-----------------------------------
+-- Step 5: Copy relevant keys from v_curbramps to curbramps
+-----------------------------------
+CREATE TABLE curbramps AS SELECT segkey AS id,
+                               -- FIXME: LineMerge has undesired behavior of stitching together
+                               -- MultiLineStrings (makes new connections) - instead, explode
+                               -- MultiLineStrings into new rows of LineStrings
+		                       ST_LineMerge(wkb_geometry) AS geom
+	                      FROM v_curbramps;
+
+CREATE INDEX curbramps_index
+          ON curbramps
+       USING gist(geom);
