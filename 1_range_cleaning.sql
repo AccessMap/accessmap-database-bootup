@@ -417,7 +417,12 @@ UPDATE intersection_groups_ready
    AND size = 2;
 
 UPDATE intersection_groups_ready
-   -- FIXME: 'size' is a resreved keyword
+   SET isCleaned = FALSE
+ -- FIXME: 'size' is a reserved keyword
+ WHERE size = 1;
+
+UPDATE intersection_groups_ready
+   -- FIXME: 'size' is a reserved keyword
    SET isCleaned = merge_to_middle_point(s_id, s_type,st_centroid(st_collect(e_geom)), s_geom, size)
  WHERE isCleaned = FALSE
    AND size = 2;
