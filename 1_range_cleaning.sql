@@ -2,9 +2,7 @@
 DROP TABLE IF EXISTS sidewalk_ends;
 DROP TABLE IF EXISTS intersection_groups;
 DROP TABLE IF EXISTS intersection_groups_ready CASCADE;
-DROP TABLE clean_sidewalks CASCADE;
-DROP TABLE intersection_groups_ready CASCADE;
-DROP TABLE clean_sidewalks CASCADE;
+DROP TABLE IF EXISTS clean_sidewalks CASCADE;
 
 /*
 Create the sidewalk_ends table to contain sidewalk startpoint and endpoint
@@ -359,6 +357,7 @@ $$
 LANGUAGE plpgsql;
 
 
+-- FIXME: this table was already created earlier in this file?
 CREATE TABLE intersection_groups_ready AS SELECT row_number() over() AS id,
                                                  i_geom,
                                                  rig.i_id,

@@ -43,8 +43,7 @@ ALTER TABLE intersections
 UPDATE intersections
    SET degree_diff = Find_Maximum_Degree_Diff(degree, num_s);
 
-          ALTER TABLE intersections
-
+ALTER TABLE intersections
 DROP COLUMN
          IF EXISTS is_t;
 

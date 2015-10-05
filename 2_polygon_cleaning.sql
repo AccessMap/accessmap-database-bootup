@@ -19,7 +19,7 @@ DROP TABLE IF EXISTS boundary_polygons CASCADE;
 CREATE TABLE boundary_polygons AS
       SELECT g.path[1] AS gid, geom
         FROM (SELECT (ST_Dump(ST_Polygonize(streets.geom))).*
-      	        FROM (streets)) AS g;
+      	        FROM streets) AS g;
 
 CREATE INDEX boundary_polygons_index
           ON boundary_polygons

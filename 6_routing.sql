@@ -1,6 +1,6 @@
-DROP FUNCTION pgr_dijkstra(varchar, int, int, varchar);
+-- DROP FUNCTION pgr_dijkstra(varchar, int, int, varchar);
 
-CREATE OR REPLACE FUNCTION pgr_dijkstra(
+CREATE OR REPLACE FUNCTION accessmap_pgr_dijkstra(
                 IN tbl varchar,
                 IN source integer,
                 IN target integer,
@@ -36,7 +36,7 @@ END;
 $BODY$
 LANGUAGE 'plpgsql' VOLATILE STRICT;
 ---Example:
-SELECT pgr_fromAtoB('yun_sidewalks_ready_routing', -122.315366,47.661083,-122.313333,47.659325,'ST_length(geom)');
+SELECT pgr_fromAtoB('sidewalks_ready_routing', -122.315366,47.661083,-122.313333,47.659325,'ST_length(geom)');
 
 
 --
