@@ -1,14 +1,33 @@
------------------------------------------
---- Step 1: Create end intersection groups
------------------------------------------
---- Get sidewalks corners table
--- TODO: check why some sidewalks with starting point return FALSE
+-- Drop tables created in this step prior to recreating them
 DROP TABLE IF EXISTS sidewalk_ends;
+DROP TABLE IF EXISTS intersection_groups;
+DROP TABLE IF EXISTS intersection_groups_ready CASCADE;
+DROP TABLE clean_sidewalks CASCADE;
+DROP TABLE intersection_groups_ready CASCADE;
+DROP TABLE clean_sidewalks CASCADE;
 
-CREATE TABLE sidewalk_ends AS SELECT row_number() over() AS id,
+/*
+Create the sidewalk_ends table to contain sidewalk startpoint and endpoint
+information, generally creating 2 rows in sidewalk_ends for every row in
+the original sidewalks table.
+    columns:
+        id: (non-unique) row count (I think) TODO: replace with new primary key
+            generator
+        geom: Point geometry representing either a sidewalk start or end point
+        sw_id: id of the associated sidewalk (should be a foreign key?)
+        sw_type: either 'S' for start or 'E' for end - which endpoint of the
+                 sidewalk it's on
+        sw_other: Point geometry representing the nearest point to the start or
+                  end - useful for generating direction the sidwalk end is
+                  pointing
+*/
+-- TODO: check why some sidewalks with starting point return FALSE
+CREATE TABLE sidewalk_ends AS SELECT row_number() OVER () AS id,
                                      geom,
                                      query.id AS sw_id,
-                                     -- FIXME: 'type' is a keyword, sidewalk_ends shouldn't have it as a column
+                                     -- FIXME: 'type' is a keyword,
+                                     -- sidewalk_ends shouldn't have it as a
+                                     -- column
                                      type AS sw_type,
                                      other AS sw_other
                                 FROM (SELECT ST_Startpoint(geom) AS geom,
@@ -17,7 +36,8 @@ CREATE TABLE sidewalk_ends AS SELECT row_number() over() AS id,
                                              ST_PointN(geom, 2) AS other
                                         FROM sidewalks
                                        WHERE ST_Startpoint(geom) IS NOT NULL
-                                UNION SELECT ST_Endpoint(geom) AS geom,
+                                       UNION
+                                      SELECT ST_Endpoint(geom) AS geom,
                                              id,
                                              'E' AS type,
                                              ST_PointN(geom, ST_NPoints(geom) - 1) AS other
@@ -26,8 +46,22 @@ CREATE TABLE sidewalk_ends AS SELECT row_number() over() AS id,
 
 CREATE INDEX sidewalk_ends_index ON sidewalk_ends USING gist(geom);
 
-DROP TABLE IF EXISTS intersection_groups;
-
+/*
+Create intersection_groups table - sidewalk_ends are associated with an
+intersection
+    Columns:
+        e_id: sidewalk_end table row id
+        i_id: intersections table row id - an intersection
+        e_geom: geom (Point) of the sidewalk_end row
+        i_geom: geom (Point) of the intersections row
+        e_type: 'type' of endpoint ('S' for start, 'E' for end, relative to the
+                geom)
+        e_s_id: s_id column of the sidewalk_end row - the ID of the sidewalk
+                (from the sidewalks table) associated with the end point
+    TODO: ensure uniqueness of endpoint-intersection association? Can an
+          endpoint belong to more than one intersection and vice versa?
+*/
+-- TODO: figure out what units are for ST_DWithin - relies on SRID
 CREATE TABLE intersection_groups AS SELECT *
                                       FROM (SELECT DISTINCT ON (e.id) e.id AS e_id, -- end id
                                                                       i.id AS i_id, -- intersection id
@@ -36,6 +70,9 @@ CREATE TABLE intersection_groups AS SELECT *
                                                                       e.sw_type AS e_type,
                                                                       e.sw_id AS e_s_id
                                                           FROM sidewalk_ends AS e
+                                                    -- FIXME: I don't think
+                                                    -- this requires
+                                                    -- parentheses
                                                     INNER JOIN (SELECT *
                                                                   FROM intersections
                                                                  WHERE num_s > 1) AS i
@@ -43,28 +80,43 @@ CREATE TABLE intersection_groups AS SELECT *
                                                  ORDER BY e.id, ST_Distance(e.geom, i.geom)) AS q
                                   ORDER BY q.i_id, ST_Azimuth(q.i_geom, q.e_geom);
 
--- TODO: remove the same assignment for each sidewalks
--- There are 408 sidewalks classified in the same group
-
+/*
+I'm not entirely sure what this is doing. It's changing the intersection ID
+and geometry for some rows in intersection_groups but I don't understand the
+logic. FIXME: understand and add comments for the logic below.
+*/
 UPDATE intersection_groups
    SET i_id = result.i_id,
        i_geom = result.i_geom
   FROM (SELECT DISTINCT ON (q.e_id) q.e_id AS e_id,
                                     i.id AS i_id,
                                     i.geom AS i_geom
+                      -- Get the 'far' endpoint of each intersection group
                       FROM (SELECT t1.*
                               FROM intersection_groups t1,
                                    intersection_groups t2
                              WHERE t1.i_id = t2.i_id
+                               -- Match being from the same sidewalk
                                AND t1.e_s_id = t2.e_s_id
+                               -- Match only if StartPoint and Endpoint
                                AND t1.e_type!=t2.e_type
+                               -- Filter by the first geom being farther
+                               -- away from intersection, ensuring that
+                               -- columns selected come from the end farther
+                               -- away from the intersection
                                AND ST_Distance(t1.e_geom, t1.i_geom) > ST_Distance(t2.e_geom, t2.i_geom)) AS q
                  LEFT JOIN intersections AS i
+                        -- FIXME: I don't understand this next line
                         ON i.id != q.i_id
+                        -- Keep the endpoints that are close to the
+                        -- intersection
                        AND ST_DWithin(q.e_geom, i.geom,200)
                   ORDER BY q.e_id, ST_Distance(q.e_geom, i.geom)) AS result
  WHERE result.e_id = intersection_groups.e_id;
 
+-- Remove intersection groups for which there's no intersection
+-- FIXME: (why do these exist in the first place - add comments after finding
+--         out)
 DELETE FROM intersection_groups
       WHERE i_id IS NULL;
 
@@ -99,7 +151,6 @@ UPDATE intersection_groups AS rig
 
 
 -- Step2: Clean sidewalks inside each pair
-DROP TABLE IF EXISTS intersection_groups_ready CASCADE;
 
 CREATE TABLE intersection_groups_ready AS SELECT row_number() over() AS id,
                                                  i_geom,
@@ -122,7 +173,6 @@ CREATE TABLE intersection_groups_ready AS SELECT row_number() over() AS id,
 Create a table to store the cleaned sidewalks after step 2
 */
 
-DROP TABLE clean_sidewalks CASCADE;
 
 CREATE TABLE clean_sidewalks AS SELECT *
                                   FROM sidewalks;
@@ -308,7 +358,6 @@ END
 $$
 LANGUAGE plpgsql;
 
-DROP TABLE intersection_groups_ready CASCADE;
 
 CREATE TABLE intersection_groups_ready AS SELECT row_number() over() AS id,
                                                  i_geom,
@@ -326,7 +375,6 @@ CREATE TABLE intersection_groups_ready AS SELECT row_number() over() AS id,
                                               ON s.id = rig.e_s_id
                                         GROUP BY i_id,  i_geom, range_group;
 
-DROP TABLE clean_sidewalks CASCADE;
 
 CREATE TABLE clean_sidewalks AS SELECT *
                                   FROM sidewalks;
@@ -374,6 +422,7 @@ UPDATE intersection_groups_ready
  WHERE isCleaned = FALSE
    AND size = 2;
 
+-- Drop temporary tables
 DROP TABLE intersection_groups;
 DROP TABLE intersection_groups_ready;
 DROP TABLE sidewalk_ends;
