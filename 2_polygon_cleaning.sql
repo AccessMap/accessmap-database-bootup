@@ -17,14 +17,9 @@ CREATE UNIQUE INDEX street_id ON streets (id);
 DROP TABLE IF EXISTS boundary_polygons CASCADE;
 
 CREATE TABLE boundary_polygons AS
-      SELECT g.path[1] as gid, geom
-        FROM (SELECT (ST_Dump(ST_Polygonize(picked_sidewalks.geom))).*
-      	        FROM (SELECT DISTINCT ON (s.id) s.id,
-                                                s.geom
-      		                        FROM streets s
-      		                   LEFT JOIN sidewalks r
-                                      ON s.id = r.segkey
-      		                       WHERE r.id is not null) AS picked_sidewalks) AS g;
+      SELECT g.path[1] AS gid, geom
+        FROM (SELECT (ST_Dump(ST_Polygonize(streets.geom))).*
+      	        FROM (streets)) AS g;
 
 CREATE INDEX boundary_polygons_index
           ON boundary_polygons
@@ -45,18 +40,23 @@ DROP TABLE IF EXISTS grouped_sidewalks;
 
 CREATE TABLE grouped_sidewalks AS SELECT b.gid AS b_id,
                                          s.id AS s_id,
-                                         s.geom AS s_geom
-                                    FROM sidewalks AS s
+                                         s.geom AS s_geom,
+                                         e_changed,
+                                         s_changed
+                                    FROM (SELECT *
+                                            FROM sidewalks AS q
+                                           WHERE GeometryType(q.geom) = 'LINESTRING') AS s
                               INNER JOIN boundary_polygons AS b
                                       ON ST_Within(s.geom, b.geom);
---    LIMIT 10000;
 
 ---  Step2: Find all polygons that is not assigned to any polygons because of offshoots.
 UPDATE grouped_sidewalks
    SET b_id = query.b_id
   FROM (SELECT b.gid AS b_id,
                s.s_id,
-               s.s_geom AS s_geom
+               s.s_geom AS s_geom,
+               e_changed,
+               s_changed
           FROM (SELECT *
                   FROM grouped_sidewalks
                  WHERE b_id IS NULL) AS s
