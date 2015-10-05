@@ -17,7 +17,7 @@ CREATE TABLE corners AS SELECT row_number() over() AS id,
                                geom,
                                array_agg(id) AS sw_id,
                                array_agg(type) AS sw_type,
-                               st_collect(s_geom) AS s_geom,
+                               ST_Collect(s_geom) AS s_geom,
                                count(id) AS num_sw
                           FROM (SELECT ST_Startpoint(geom) AS geom,
                                        id,
@@ -112,38 +112,45 @@ CREATE TABLE corner_group AS SELECT *
                                FROM (SELECT row_number() over() AS id,
                                             rig.i_id,
                                             rig.range_group,
-                                            st_centroid(st_collect(rig.c_geom)) AS c_geom,
-                                            st_collect(rig.s_geom) AS s_geom
+                                            ST_Centroid(ST_Collect(rig.c_geom)) AS c_geom,
+                                            ST_Collect(rig.s_geom) AS s_geom,
+                                            NUM(c_id) as count
                                        FROM intersection_group AS rig
                                    GROUP BY i_id,i_geom, range_group) AS q;
 
 DROP TABLE IF EXISTS connection;
 
-CREATE TABLE connection AS SELECT ST_MakeLine(q1.c_geom, q2.c_geom),
-                                  q1.id AS c1_id,
-                                  q2.id AS c2_id
-                             FROM (SELECT cg.*,
-                                          i.degree_diff
-                                     FROM corner_group AS cg
-                                     JOIN intersections AS i
-                                       ON i.id = cg.i_id
-                                    WHERE i.is_t IS NULL
-                                      AND num_s > 3) AS q1,
-                                  (SELECT cg.*,
-                                          i.degree_diff
-                                     FROM corner_group AS cg
-                                     JOIN intersections AS i
-                                       ON i.id = cg.i_id
-                                    WHERE i.is_t IS NULL AND num_s > 3) AS q2,
-                                  (  SELECT i_id,
-                                            count(range_group) AS count
-                                       FROM corner_group
-                                   -- TODO: number is a reserved keyword
-                                   GROUP BY i_id) AS number
-                            WHERE number.i_id = q1.i_id
-                              AND q1.i_id = q2.i_id
-                              AND (q1.range_group + 1 = q2.range_group
-                               OR q1.range_group/number.count = q2.range_group);
+CREATE TABLE connection(id SERIAL PRIMARY KEY,
+                        geom Geometry,
+                        c1_id int,
+                        c2_id int);
+
+INSERT INTO connection (geom, c1_id, c2_id)
+     SELECT ST_MakeLine(q1.c_geom, q2.c_geom) as geom,
+                        q1.id AS c1_id,
+                        q2.id AS c2_id
+       FROM (  SELECT cg.*,
+                      i.degree_diff
+                 FROM corner_group AS cg
+                 JOIN intersections AS i
+                   ON i.id = cg.i_id
+                WHERE i.is_t IS NULL
+                  AND num_s > 3) AS q1,
+            (  SELECT cg.*,
+                      i.degree_diff
+                 FROM corner_group AS cg
+                 JOIN intersections AS i
+                   ON i.id = cg.i_id
+                WHERE i.is_t IS NULL AND num_s > 3) AS q2,
+            (  SELECT i_id,
+                      count(range_group) AS count
+                 FROM corner_group
+             -- FIXME: number is a reserved keyword
+             GROUP BY i_id) AS number
+      WHERE number.i_id = q1.i_id
+        AND q1.i_id = q2.i_id
+        AND (q1.range_group + 1 = q2.range_group
+         OR q1.range_group/number.count = q2.range_group);
 
 INSERT INTO connection SELECT ST_MakeLine(q1.c_geom, q2.c_geom),
                               q1.id AS c1_id,
@@ -174,8 +181,8 @@ INSERT INTO connection SELECT ST_MakeLine(q1.c_geom, q2.c_geom),
                           AND (q1.range_group + 1 = q2.range_group
                            OR q1.range_group/number.count = q2.range_group);
 
-INSERT INTO connection
-     SELECT ST_ShortestLine(q1.s_geom, q2.c_geom),
+INSERT INTO connection (geom, c1_id, c2_id)
+     SELECT ST_ShortestLine(q1.s_geom, q2.c_geom) as geom,
             q1.id AS c1_id,
             q2.id AS c2_id
        FROM (SELECT cg.*,
