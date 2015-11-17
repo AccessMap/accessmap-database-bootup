@@ -13,4 +13,6 @@ CREATE TABLE sidewalks_ready_routing AS SELECT row_number() over() AS id,
                                                      FROM connection) AS q
                                          WHERE GeometryType(q.geom) = 'LINESTRING';
 
--- FIXME: run pgrouting vertices-making function on this table!
+ALTER TABLE sidewalks_ready_routing ADD COLUMN source integer;
+ALTER TABLE sidewalks_ready_routing ADD COLUMN target integer;
+SELECT pgr_createTopology('sidewalks_ready_routing', 0.00001, 'geom', 'id')
