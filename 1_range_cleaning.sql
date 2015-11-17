@@ -19,6 +19,7 @@ the original sidewalks table.
                   end - useful for generating direction the sidwalk end is
                   pointing
 */
+
 -- TODO: check why some sidewalks with starting point return FALSE
 CREATE TABLE sidewalk_ends AS SELECT row_number() OVER () AS id,
                                      geom,
@@ -104,10 +105,9 @@ UPDATE intersection_groups
                                -- away from the intersection
                                AND ST_Distance(t1.e_geom, t1.i_geom) > ST_Distance(t2.e_geom, t2.i_geom)) AS q
                  LEFT JOIN intersections AS i
-                        -- FIXME: I don't understand this next line
+                        -- Join when intersection IDs *don't* match (?)
                         ON i.id != q.i_id
-                        -- Keep the endpoints that are close to the
-                        -- intersection
+                        -- But the intersections still need to be closeby
                        AND ST_DWithin(q.e_geom, i.geom,200)
                   ORDER BY q.e_id, ST_Distance(q.e_geom, i.geom)) AS result
  WHERE result.e_id = intersection_groups.e_id;
@@ -137,9 +137,13 @@ END
 $$
 LANGUAGE plpgsql;
 
+-- 'range_group' column - attempting to group corners at intersections by
+-- block.
 ALTER TABLE intersection_groups
  ADD COLUMN range_group int;
 
+-- Update range group - find_corner_groups assigns as '1' or '-1' if it's
+-- within the range specified. FIXME: what is the real purpose of this?
 UPDATE intersection_groups AS rig
    SET range_group = find_corner_groups(i.degree, ST_Azimuth(rig.i_geom, ST_Line_Interpolate_Point(st_makeline(e.geom, e.sw_other), 0.9)))
   FROM intersections AS i,
@@ -149,23 +153,6 @@ UPDATE intersection_groups AS rig
 
 
 -- Step2: Clean sidewalks inside each pair
-
-CREATE TABLE intersection_groups_ready AS SELECT row_number() over() AS id,
-                                                 i_geom,
-                                                 rig.i_id,
-                                                 rig.range_group,
-                                                 array_agg(rig.e_geom) AS e_geom,
-                                                 array_agg(rig.e_type) AS s_type,
-                                                 array_agg(rig.e_s_id) AS s_id,
-                                                 array_agg(s.geom) AS s_geom,
-                                                 -- FIXME: 'FALSE' is a reserved keyword
-                                                 FALSE AS isCleaned,
-                                                 -- FIXME: 'size' is a reserved keyword
-                                                 count(e_id) AS size
-                                            FROM intersection_groups AS rig
-                                      INNER JOIN sidewalks AS s ON s.id = rig.e_s_id
-                                        GROUP BY i_id,  i_geom, range_group;
-
 
 /*
 Create a table to store the cleaned sidewalks after step 2
@@ -357,7 +344,6 @@ $$
 LANGUAGE plpgsql;
 
 
--- FIXME: this table was already created earlier in this file?
 CREATE TABLE intersection_groups_ready AS SELECT row_number() over() AS id,
                                                  i_geom,
                                                  rig.i_id,
@@ -373,21 +359,6 @@ CREATE TABLE intersection_groups_ready AS SELECT row_number() over() AS id,
                                       INNER JOIN sidewalks AS s
                                               ON s.id = rig.e_s_id
                                         GROUP BY i_id,  i_geom, range_group;
-
-
-CREATE TABLE clean_sidewalks AS SELECT *
-                                  FROM sidewalks;
-
-ALTER TABLE clean_sidewalks
-        ADD PRIMARY KEY (id);
-
-CREATE INDEX index_clean_sidewalks
-          ON clean_sidewalks
-       USING gist(geom);
-
-UPDATE clean_sidewalks
-   SET s_changed = FALSE,
-       e_changed = FALSE;
 
 UPDATE intersection_groups_ready
    SET isCleaned = FALSE;

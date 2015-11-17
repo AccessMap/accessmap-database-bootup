@@ -126,32 +126,38 @@ CREATE TABLE connection(id SERIAL PRIMARY KEY,
                         c1_id int,
                         c2_id int);
 
+/* Generate crossings at Non-T intersections
+FIXME: This is the section that is currently the most broken -
+0 entries are updated (not crossings made)*/
+/*
+Logic: Generate cross join on all corner groups at an intersection,
+       only make line joining a given pair if it crosses a street
+*/
 INSERT INTO connection (geom, c1_id, c2_id)
      SELECT ST_MakeLine(q1.c_geom, q2.c_geom) as geom,
                         q1.id AS c1_id,
                         q2.id AS c2_id
-       FROM (  SELECT cg.*,
-                      i.degree_diff
-                 FROM corner_group AS cg
-                 JOIN intersections AS i
-                   ON i.id = cg.i_id
-                WHERE i.is_t IS NULL
-                  AND num_s > 3) AS q1,
-            (  SELECT cg.*,
-                      i.degree_diff
-                 FROM corner_group AS cg
-                 JOIN intersections AS i
-                   ON i.id = cg.i_id
-                WHERE i.is_t IS NULL AND num_s > 3) AS q2,
-            (  SELECT i_id,
-                      count(range_group) AS count
+       FROM (  SELECT corner_group.*,
+                      intersections.degree_diff
                  FROM corner_group
-             -- FIXME: number is a reserved keyword
-             GROUP BY i_id) AS number
-      WHERE number.i_id = q1.i_id
+                 JOIN intersections
+                   ON intersections.id = corner_group.i_id
+                WHERE intersections.is_t IS FALSE
+                  AND num_s > 3) AS q1,
+            (  SELECT corner_group.*,
+                      intersections.degree_diff
+                 FROM corner_group
+                 JOIN intersections
+                   ON intersections.id = corner_group.i_id
+                WHERE intersections.is_t IS FALSE AND num_s > 3) AS q2,
+            (  SELECT i_id,
+                      count(range_group) as count /* Why make a bunch of these? All the same value */
+                 FROM corner_group
+             GROUP BY i_id) AS num
+      WHERE num.i_id = q1.i_id
         AND q1.i_id = q2.i_id
-        AND (q1.range_group + 1 = q2.range_group
-         OR q1.range_group/number.count = q2.range_group);
+        AND (q1.range_group + 1 = q2.range_group /* clockwise */OR
+             q1.range_group/num.count = q2.range_group);
 
 INSERT INTO connection (geom, c1_id, c2_id)
      SELECT ST_MakeLine(q1.c_geom, q2.c_geom),
@@ -176,12 +182,11 @@ INSERT INTO connection (geom, c1_id, c2_id)
             (  SELECT i_id,
                       count(range_group) AS count
                  FROM corner_group
-             -- FIXME: number is a reserved keyword
-             GROUP BY i_id) AS number
-      WHERE number.i_id = q1.i_id
+             GROUP BY i_id) AS num
+      WHERE num.i_id = q1.i_id
         AND q1.i_id = q2.i_id
         AND (q1.range_group + 1 = q2.range_group
-         OR q1.range_group/number.count = q2.range_group);
+         OR q1.range_group/num.count = q2.range_group);
 
 INSERT INTO connection (geom, c1_id, c2_id)
      SELECT ST_ShortestLine(q1.s_geom, q2.c_geom) as geom,
@@ -206,11 +211,10 @@ INSERT INTO connection (geom, c1_id, c2_id)
             (  SELECT i_id,
                       count(range_group) AS count
                  FROM corner_group
-             -- FIXME: number is a reserved keyword
-             GROUP BY i_id) AS number
-      WHERE number.i_id = q1.i_id
+             GROUP BY i_id) AS num
+      WHERE num.i_id = q1.i_id
         AND q1.i_id = q2.i_id
         AND (q1.range_group + 1 = q2.range_group
              OR q1.range_group - 1 = q2.range_group
-             OR q1.range_group/number.count = q2.range_group
-             OR q2.range_group/number.count = q1.range_group);
+             OR q1.range_group/num.count = q2.range_group
+             OR q2.range_group/num.count = q1.range_group);
