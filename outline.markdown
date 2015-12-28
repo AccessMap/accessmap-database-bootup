@@ -1,8 +1,8 @@
 Generalized workflow:
 Inputs:
   'streets' table with these columns:
-
   'sidewalks' table with these columns:
+  'ned13' table of imported NED 1/3 arc second data
 
 Big FIXMEs:
   * curbs get annotated in step 6 from sidewalks (practical for Seattle, but not other cities),

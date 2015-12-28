@@ -218,3 +218,15 @@ INSERT INTO connection (geom, c1_id, c2_id)
              OR q1.range_group - 1 = q2.range_group
              OR q1.range_group/num.count = q2.range_group
              OR q2.range_group/num.count = q1.range_group);
+
+/* Remove crossings that intersect more than one street (usually incorrect
+crossings e.g. ones that go across an intersection diagonally) */
+DELETE FROM connection
+WHERE id IN (SELECT counts.connection_id
+               FROM (SELECT c.id AS connection_id,
+                            count(c.id) AS num
+                       FROM streets AS s,
+                            connection AS c
+                       WHERE ST_Intersects(s.geom, c.geom)
+                    GROUP BY (c.id)) AS counts
+              WHERE counts.num > 1);
