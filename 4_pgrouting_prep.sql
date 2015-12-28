@@ -10,7 +10,7 @@ CREATE TABLE sidewalks_ready_routing AS SELECT row_number() over() AS id,
                                                    SELECT id AS o_id,
                                                                 geom,
                                                                 1 as isCrossing
-                                                     FROM connection) AS q
+                                                     FROM crossings) AS q
                                          WHERE GeometryType(q.geom) = 'LINESTRING';
 
 ALTER TABLE sidewalks_ready_routing ADD COLUMN source integer;
