@@ -71,11 +71,11 @@ ALTER TABLE data.sidewalks
 -- Step 5: Copy relevant keys from source.v_curbramps to data.curbramps
 -----------------------------------
 CREATE TABLE data.curbramps AS
-      SELECT segkey AS id,
+      SELECT cast(segkey as integer) AS id,
              -- FIXME: LineMerge has undesired behavior of stitching together
              -- MultiLineStrings (makes new connections) - instead, explode
              -- MultiLineStrings into new rows of LineStrings
-	         ST_LineMerge(geom) AS geom
+	         geom
 	    FROM source.v_curbramps;
 
 CREATE INDEX curbramps_index

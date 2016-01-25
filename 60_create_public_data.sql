@@ -105,5 +105,5 @@ DROP TABLE IF EXISTS public.curbramps_data;
 
 CREATE TABLE public.curbramps_data AS
       SELECT id,
-             geom
+             ST_Transform(geom, 4269) AS geom
         FROM data.curbramps;
