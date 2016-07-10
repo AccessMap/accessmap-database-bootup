@@ -134,6 +134,11 @@ CREATE TABLE build.crossings(id SERIAL PRIMARY KEY,
                              c1_id int,
                              c2_id int);
 
+CREATE INDEX crossings_index
+          ON build.crossings
+       USING gist(geom);
+
+
 /* Generate crossings at Non-T intersections
 FIXME: This is the section that is currently the most broken -
 0 entries are updated (not crossings made)*/
