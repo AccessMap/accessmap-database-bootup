@@ -1,15 +1,4 @@
 \timing
--- Input --> outputs:
---      v_streets (SDOT streets) --> streets
---          compkey --> id, ST_LineMerge(wkb_geometry) --> geom
---
---      v_sidewalks (SDOT sidewalks) --> sidewalks
---
-
--- FIXME: segkey is kept for sidewalks, is not going to exist for most other
---        cities. Work around needing it.
-
-
 -------------------------------------------------
 -- Step 1: Drop all tables created in these steps
 -------------------------------------------------
@@ -19,42 +8,42 @@ DROP TABLE IF EXISTS data.sidewalks;
 DROP TABLE IF EXISTS data.curbramps;
 
 
------------------------------------
--- Step 2: Copy relevant keys from v_streets to streets
------------------------------------
+--
+-- Step 2: Copy relevant keys from source.streets to data.streets
+--
 -- FIXME: compkey (id in 'streets') is not unique, but it gets used later. Should be
 --        renamed and if a unique id is needed, it should be created on that
 --        data set
 -- TODO: investigate SRID of geom
 CREATE TABLE data.streets AS
-      SELECT compkey AS id,
+      SELECT compkey,
              -- FIXME: LineMerge has undesired behavior of stitching together
              -- MultiLineStrings (makes new connections) - instead, explode
              -- MultiLineStrings into new rows of LineStrings
-		     ST_LineMerge(wkb_geometry) AS geom
-	    FROM source.v_streets;
+		     ST_Transform((ST_Dump(geom)).geom, 4326) AS geom
+	    FROM source.streets;
+ALTER TABLE data.streets ADD COLUMN id SERIAL PRIMARY KEY;
 
 CREATE INDEX streets_index
           ON data.streets
        USING gist(geom);
 
-
------------------------------------------------------------
--- Step 3: Copy relevant keys from v_sidewalks to sidewalks
------------------------------------------------------------
---- Transform sidewalks data from SDOT
+--
+-- Step 3: Copy relevant keys from source.sidewalks to data.sidewalks
+--
+-- Transform sidewalks data from SDOT
 CREATE TABLE data.sidewalks AS
-      SELECT compkey AS id,
-		     ST_LineMerge(ST_Transform(wkb_geometry, 2926)) AS geom,
-		     segkey
-	    FROM source.v_sidewalks;
+      SELECT compkey,
+		     ST_Transform((ST_Dump(geom)).geom, 4326) AS geom,
+		     segkey,
+             curbramphi,
+             curbramplo
+	    FROM source.sidewalks;
+ALTER TABLE data.sidewalks ADD COLUMN id SERIAL PRIMARY KEY;
 
 CREATE INDEX sidewalks_index
           ON data.sidewalks
        USING gist(geom);
-
-ALTER TABLE data.sidewalks
-        ADD PRIMARY KEY (id);
 
 -- Delete all sidewalks that cause problems when plotting
 -- FIXME: Fix ST_LineMerge errors and avoid deleting null sidewalks
@@ -67,17 +56,27 @@ ALTER TABLE data.sidewalks
  ADD COLUMN "e_changed" BOOLEAN DEFAULT FALSE;
 
 
------------------------------------
--- Step 5: Copy relevant keys from source.v_curbramps to data.curbramps
------------------------------------
+--
+-- Step 5: Infer curb ramp locations from sidewalks dataset
+--
 CREATE TABLE data.curbramps AS
-      SELECT cast(segkey as integer) AS id,
-             -- FIXME: LineMerge has undesired behavior of stitching together
-             -- MultiLineStrings (makes new connections) - instead, explode
-             -- MultiLineStrings into new rows of LineStrings
-	         geom
-	    FROM source.v_curbramps;
+      SELECT compkey AS sw_compkey,
+	         ST_EndPoint(geom) AS geom
+	    FROM data.sidewalks s1
+       WHERE s1.curbramphi = 'Y'
+       UNION
+      SELECT compkey AS sw_compkey,
+	         ST_StartPoint(geom) AS geom
+	    FROM data.sidewalks s2
+       WHERE s2.curbramplo = 'Y';
+ALTER TABLE data.curbramps ADD COLUMN id SERIAL PRIMARY KEY;
 
 CREATE INDEX curbramps_index
           ON data.curbramps
        USING gist(geom);
+
+--
+-- Drop unnecessary columns
+--
+ALTER TABLE data.sidewalks DROP COLUMN curbramphi;
+ALTER TABLE data.sidewalks DROP COLUMN curbramplo;
