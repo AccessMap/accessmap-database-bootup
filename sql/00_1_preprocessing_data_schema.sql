@@ -20,7 +20,7 @@ CREATE TABLE data.streets AS
              -- FIXME: LineMerge has undesired behavior of stitching together
              -- MultiLineStrings (makes new connections) - instead, explode
              -- MultiLineStrings into new rows of LineStrings
-		     ST_Transform((ST_Dump(geom)).geom, 4326) AS geom
+		     ST_Transform((ST_Dump(geom)).geom, 2926) AS geom
 	    FROM source.streets;
 ALTER TABLE data.streets ADD COLUMN id SERIAL PRIMARY KEY;
 
@@ -34,7 +34,7 @@ CREATE INDEX streets_index
 -- Transform sidewalks data from SDOT
 CREATE TABLE data.sidewalks AS
       SELECT compkey,
-		     ST_Transform((ST_Dump(geom)).geom, 4326) AS geom,
+		     ST_Transform((ST_Dump(geom)).geom, 2926) AS geom,
 		     segkey,
              curbramphi,
              curbramplo
@@ -74,6 +74,16 @@ ALTER TABLE data.curbramps ADD COLUMN id SERIAL PRIMARY KEY;
 CREATE INDEX curbramps_index
           ON data.curbramps
        USING gist(geom);
+
+--
+-- Step 6: Convert SRID to same as vector data
+--
+UPDATE data.ned13
+   SET rast = ST_Transform(rast, 2926);
+
+CREATE INDEX ned13_convexhull_index
+          ON data.ned13
+       USING gist(ST_ConvexHull(rast));
 
 --
 -- Drop unnecessary columns

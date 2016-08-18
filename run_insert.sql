@@ -6,3 +6,4 @@ SET schema 'source';
 SET search_path = source, public;
 \i /sourcedata/streets.sql
 \i /sourcedata/sidewalks.sql
+\i /sourcedata/dem.sql

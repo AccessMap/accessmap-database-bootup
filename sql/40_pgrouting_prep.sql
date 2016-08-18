@@ -14,6 +14,10 @@ CREATE TABLE build.routing AS
                    FROM build.crossings) AS q
        WHERE GeometryType(q.geom) = 'LINESTRING';
 
+CREATE INDEX routing_index
+          ON build.routing
+       USING gist(geom);
+
 ALTER TABLE build.routing
  ADD COLUMN source integer;
 

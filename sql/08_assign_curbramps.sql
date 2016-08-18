@@ -2,22 +2,23 @@
 Goal: Assign curbramps to sidewalks so that when sidewalk ends move, the
 curbramp locations are also updated. In the end, curbramps become a property
 of crossings that connect to the ends of sidewalks.
-
 Strategy: data.curbramps contains curb ramps locations and data.sidewalks
 contains sidewalks. Whenever the end of a sidewalk is in the same location as
 a curb ramp (within some tolerance), it will be assigned to the 'start' or
 'end' of the sidewalk
 */
+ALTER TABLE data.sidewalks DROP COLUMN IF EXISTS curbramp_start;
+ALTER TABLE data.sidewalks DROP COLUMN IF EXISTS curbramp_end;
 
-ALTER TABLE data.sidewalks
- ADD COLUMN curbramp_start boolean
- ADD COLUMN curbramp_end boolean;
+ALTER TABLE data.sidewalks ADD COLUMN curbramp_start boolean;
+ALTER TABLE data.sidewalks ADD COLUMN curbramp_end boolean;
 
+UPDATE data.sidewalks sw
+   SET curbramp_start = 't'
+  FROM data.curbramps c
+ WHERE ST_DWithin(ST_StartPoint(sw.geom), c.geom, 0.001);
 
-UPDATE TABLE data.sidewalks
-         SET curbramp_start = EXISTS (SELECT DWithin(ST_StartPoint(sw.geom), c.geom, 0.001)
-                                        FROM data.sidewalks AS sw
-                                        JOIN data.curbramps AS c)
-         SET curbramp_end = EXISTS (SELECT DWithin(ST_EndPoint(sw.geom), c.geom, 0.001)
-                                        FROM data.sidewalks AS sw
-                                        JOIN data.curbramps AS c)
+UPDATE data.sidewalks sw
+   SET curbramp_end = 't'
+  FROM data.curbramps c
+ WHERE ST_DWithin(ST_EndPoint(sw.geom), c.geom, 0.001);

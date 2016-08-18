@@ -48,6 +48,19 @@ CREATE INDEX sidewalk_ends_index
           ON build.sidewalk_ends
        USING gist(geom);
 
+--
+-- Create intersections table - based on where street network has intersections
+--
+
+-- CREATE TABLE build.intersections AS
+--       SELECT ST_Intersection(st1.geom, st2.geom) AS geom
+--         FROM data.streets st1
+--         JOIN data.streets st2
+--           ON ST_Intersects(st1.geom, st2.geom)
+--        WHERE st1.id != st2.id;
+--
+-- ALTER TABLE build.intersections ADD COLUMN id SERIAL PRIMARY KEY;
+
 /*
 Create build.intersection_groups table - build.sidewalk_ends are associated with an
 intersection
@@ -72,13 +85,11 @@ CREATE TABLE build.intersection_groups AS
                                         i.geom AS i_geom,  -- intersection geom POINT
                                         e.sw_type AS e_type,
                                         e.sw_id AS e_s_id
-                            FROM build.sidewalk_ends AS e
-                      -- FIXME: I don't think
-                      -- this requires
-                      -- parentheses
-                      INNER JOIN (SELECT *
+                            FROM build.sidewalk_ends e
+                      INNER JOIN (SELECT id,
+                                         geom
                                     FROM build.intersections
-                                   WHERE num_s > 1) AS i
+                                   WHERE num_s > 1) i
                          ON ST_DWithin(e.geom, i.geom, 200)
                    ORDER BY e.id, ST_Distance(e.geom, i.geom)) AS q
     ORDER BY q.i_id, ST_Azimuth(q.i_geom, q.e_geom);
@@ -150,7 +161,7 @@ ALTER TABLE build.intersection_groups
 -- Update range group - find_corner_groups assigns as '1' or '-1' if it's
 -- within the range specified. FIXME: what is the real purpose of this?
 UPDATE build.intersection_groups AS rig
-   SET range_group = find_corner_groups(i.degree, ST_Azimuth(rig.i_geom, ST_Line_Interpolate_Point(ST_MakeLine(e.geom, e.sw_other), 0.9)))
+   SET range_group = find_corner_groups(i.degree, ST_Azimuth(rig.i_geom, ST_LineInterpolatePoint(ST_MakeLine(e.geom, e.sw_other), 0.9)))
   FROM build.intersections AS i,
        build.sidewalk_ends AS e
  WHERE i.id = rig.i_id
@@ -231,19 +242,19 @@ BEGIN
     /*
     IF s_geom is null THEN
         SELECT geom FROM build.clean_sidewalks WHERE id = s_id INTO s AND geometrytype(geom) = 'LINESTRING';
-        i_f := ST_Line_Locate_Point(s.geom, i);
+        i_f := ST_LineLocatePoint(s.geom, i);
     ELSE
     */
-    i_f := ST_Line_Locate_Point(s_geom, i);
+    i_f := ST_LineLocatePoint(s_geom, i);
     IF e = 'E'
     THEN
          UPDATE build.clean_sidewalks
-            SET geom = ST_Line_Substring(s_geom, 0, i_f),
+            SET geom = ST_LineSubstring(s_geom, 0, i_f),
                 e_changed = TRUE
           WHERE id = s_id;
     ELSE
          UPDATE build.clean_sidewalks
-            SET geom = ST_Line_Substring(s_geom, i_f, 1),
+            SET geom = ST_LineSubstring(s_geom, i_f, 1),
                 s_changed = TRUE
           WHERE id = s_id;
     END IF;

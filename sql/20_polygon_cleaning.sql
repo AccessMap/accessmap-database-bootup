@@ -48,11 +48,10 @@ CREATE TABLE build.grouped_sidewalks AS SELECT b.gid AS b_id,
                                                s.geom AS s_geom,
                                                e_changed,
                                                s_changed
-                                          FROM (SELECT *
-                                                  FROM data.sidewalks AS q
-                                                 WHERE GeometryType(q.geom) = 'LINESTRING') AS s
-                              INNER JOIN build.boundary_polygons AS b
-                                      ON ST_Within(s.geom, b.geom);
+                                          FROM data.sidewalks s
+                              INNER JOIN build.boundary_polygons b
+                                      ON ST_Within(s.geom, b.geom)
+                                   WHERE GeometryType(s.geom) = 'LINESTRING';
 
 ---  Step2: Find all polygons that is not assigned to any polygons because of offshoots.
 UPDATE build.grouped_sidewalks
