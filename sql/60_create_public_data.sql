@@ -42,7 +42,7 @@ CREATE TABLE public.sidewalks AS
              epoint.elevation AS ele_end,
              spoint.id
         FROM (SELECT ST_Value(n.rast, s.startpoint) AS elevation,
-                     ST_Transform(s.geom, 4326),
+                     ST_Transform(s.geom, 4326) AS geom,
                      s.id
                 FROM sidewalks_4269 AS s,
                      data.ned13 AS n
@@ -66,7 +66,7 @@ CREATE TABLE public.crossings AS
              epoint.elevation AS ele_end,
              spoint.id
         FROM (SELECT ST_Value(n.rast, c.startpoint) AS elevation,
-                     ST_Transform(c.geom, 4326),
+                     ST_Transform(c.geom, 4326) AS geom,
                      c.id
                 FROM crossings_4269 AS c,
                      data.ned13 AS n
@@ -101,7 +101,7 @@ CREATE TABLE public.sidewalks_data AS
              epoint.elevation AS ele_end,
              spoint.id
         FROM (SELECT ST_Value(n.rast, s.startpoint) AS elevation,
-                     ST_Transform(s.geom, 4326),
+                     ST_Transform(s.geom, 4326) AS geom,
                      s.id
                 FROM sidewalks_data_4269 AS s,
                      data.ned13 AS n

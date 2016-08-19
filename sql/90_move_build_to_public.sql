@@ -17,12 +17,12 @@ INSERT INTO crossings
      SELECT *
        FROM build.crossings;
 */
-CREATE TABLE routing (like build.routing INCLUDING INDEXES);
-INSERT INTO routing
+CREATE TABLE public.routing (like build.routing INCLUDING INDEXES);
+INSERT INTO public.routing
      SELECT *
        FROM build.routing;
 
-CREATE TABLE routing_vertices_pgr (like build.routing INCLUDING INDEXES);
-INSERT INTO routing_vertices_pgr
+CREATE TABLE public.routing_vertices_pgr (like build.routing_vertices_pgr INCLUDING INDEXES);
+INSERT INTO public.routing_vertices_pgr
      SELECT *
        FROM build.routing_vertices_pgr;
