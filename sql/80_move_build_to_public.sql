@@ -1,6 +1,8 @@
 DROP TABLE IF EXISTS public.sidewalks;
 DROP TABLE IF EXISTS public.crossings;
 DROP TABLE IF EXISTS public.curbramps;
+DROP TABLE IF EXISTS public.sidewalks_orig;
+DROP TABLE IF EXISTS public.curbramps_orig;
 
 -- Copy to public schema and convert to latlon
 -- sidewalks
@@ -29,4 +31,21 @@ INSERT INTO public.curbramps
        FROM build.curbramps;
 
 UPDATE public.curbramps
+   SET geom = ST_Transform(geom, 4326);
+
+-- original data for sidewalks, curb ramps
+CREATE TABLE public.sidewalks_orig (like data.sidewalks INCLUDING INDEXES);
+INSERT INTO public.sidewalks_orig
+     SELECT *
+       FROM data.sidewalks;
+
+UPDATE public.sidewalks_orig
+   SET geom = ST_Transform(geom, 4326);
+
+CREATE TABLE public.curbramps_orig (like data.curbramps INCLUDING INDEXES);
+INSERT INTO public.curbramps_orig
+     SELECT *
+       FROM data.curbramps;
+
+UPDATE public.curbramps_orig
    SET geom = ST_Transform(geom, 4326);

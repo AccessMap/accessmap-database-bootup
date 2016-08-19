@@ -17,11 +17,23 @@ ALTER TABLE build.crossings
 ALTER TABLE build.crossings
  ADD COLUMN ele_end float;
 
+ALTER TABLE data.sidewalks
+ ADD COLUMN grade float;
+
+ALTER TABLE data.sidewalks
+ ADD COLUMN ele_start float;
+
+ALTER TABLE data.sidewalks
+ ADD COLUMN ele_end float;
+
 -- Remove length-0 edges
 DELETE FROM build.clean_sidewalks
       WHERE ST_Length(geom) = 0;
 
 DELETE FROM build.crossings
+      WHERE ST_Length(geom) = 0;
+
+DELETE FROM data.sidewalks
       WHERE ST_Length(geom) = 0;
 
 -- Due to problems in reprojecting the raster table itself, we need to
@@ -46,6 +58,15 @@ CREATE TEMPORARY TABLE crossing_endpoints AS
                           FROM data.ned13
                          LIMIT 1) n;
 
+CREATE TEMPORARY TABLE sidewalk_data_endpoints AS
+                SELECT s.id,
+                       ST_Transform(ST_StartPoint(s.geom), n.srid) AS startpoint,
+                       ST_Transform(ST_EndPoint(s.geom), n.srid) AS endpoint
+                  FROM data.sidewalks s,
+                       (SELECT ST_SRID(rast) AS srid
+                          FROM data.ned13
+                         LIMIT 1) n;
+
 UPDATE build.clean_sidewalks s
    SET ele_start = ST_Value(n.rast,  e.startpoint)
   FROM data.ned13 n,
@@ -71,6 +92,20 @@ UPDATE build.crossings s
    SET ele_end = ST_Value(n.rast,  e.endpoint)
   FROM data.ned13 n,
        crossing_endpoints e
+ WHERE ST_Intersects(n.rast, e.endpoint)
+   AND s.id = e.id;
+
+UPDATE data.sidewalks s
+   SET ele_start = ST_Value(n.rast,  e.startpoint)
+  FROM data.ned13 n,
+       sidewalk_data_endpoints e
+ WHERE ST_Intersects(n.rast, e.startpoint)
+   AND s.id = e.id;
+
+UPDATE data.sidewalks s
+   SET ele_end = ST_Value(n.rast,  e.endpoint)
+  FROM data.ned13 n,
+       sidewalk_data_endpoints e
  WHERE ST_Intersects(n.rast, e.endpoint)
    AND s.id = e.id;
 
@@ -78,4 +113,7 @@ UPDATE build.clean_sidewalks
    SET grade = (ele_end - ele_start) / ST_Length(geom);
 
 UPDATE build.crossings
+   SET grade = (ele_end - ele_start) / ST_Length(geom);
+
+UPDATE data.sidewalks
    SET grade = (ele_end - ele_start) / ST_Length(geom);
