@@ -10,14 +10,14 @@ Strategy: Recreate 'curbramps' cleaned-up data table after moving sidewalks,
 
 
 -- Create the new curbramps table
-DROP TABLE IF EXISTS public.curbramps;
-CREATE TABLE public.curbramps (
+DROP TABLE IF EXISTS build.curbramps;
+CREATE TABLE build.curbramps (
 --   id integer PRIMARY KEY DEFAULT nextval('serial'),
   id SERIAL PRIMARY KEY,
   geom geometry
 );
 
-INSERT INTO public.curbramps (geom)
+INSERT INTO build.curbramps (geom)
      SELECT geom
        FROM (SELECT ST_StartPoint(sw.geom) AS geom
                FROM build.clean_sidewalks sw
@@ -28,7 +28,7 @@ INSERT INTO public.curbramps (geom)
               WHERE sw.curbramp_end) cr;
 
 -- SELECT geom
---   INTO public.curbramps
+--   INTO build.curbramps
 --   FROM (SELECT ST_StartPoint(sw.geom) AS geom
 --           FROM build.clean_sidewalks sw
 --          WHERE sw.curbramp_start

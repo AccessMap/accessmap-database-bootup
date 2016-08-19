@@ -37,5 +37,6 @@ RUN curl -O https://prd-tnm.s3.amazonaws.com/StagedProducts/Elevation/13/ArcGrid
 # 'routing.sh' is already present from pgrouting, so we have to run just after
 # that. The data is loaded during container deployment, not built-in, following
 # postgres docker container standards.
-COPY ./initdb-accessmap.sh /docker-entrypoint-initdb.d/setup_accessmap.sh
 COPY ./run_insert.sql /sourcedata/run_insert.sql
+COPY ./sql /sourcedata/sql
+COPY ./initdb-accessmap.sh /docker-entrypoint-initdb.d/setup_accessmap.sh

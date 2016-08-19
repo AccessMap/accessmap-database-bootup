@@ -1,22 +1,25 @@
-/*
-DROP TABLE IF EXISTS sidewalks;
-DROP TABLE IF EXISTS crossings;
-*/
-DROP TABLE IF EXISTS routing;
-DROP TABLE IF EXISTS routing_vertices_pgr;
+-- DROP TABLE IF EXISTS public.sidewalks;
+-- DROP TABLE IF EXISTS public.crossings;
+-- DROP TABLE IF EXISTS public.curbramps;
+DROP TABLE IF EXISTS public.routing;
+DROP TABLE IF EXISTS public.routing_vertices_pgr;
 
 /* Copy (some) build tables to public */
-/*
-CREATE TABLE sidewalks (like build.clean_sidewalks INCLUDING INDEXES);
-INSERT INTO sidewalks
-     SELECT *
-       FROM build.clean_sidewalks;
+-- CREATE TABLE public.sidewalks (like build.clean_sidewalks INCLUDING INDEXES);
+-- INSERT INTO public.sidewalks
+--      SELECT *
+--        FROM build.clean_sidewalks;
+--
+-- CREATE TABLE public.crossings (like build.crossings INCLUDING INDEXES);
+-- INSERT INTO public.crossings
+--      SELECT *
+--        FROM build.crossings;
+--
+-- CREATE TABLE public.crossings (like build.curbramps INCLUDING INDEXES);
+-- INSERT INTO public.crossings
+--      SELECT *
+--        FROM build.curbramps;
 
-CREATE TABLE crossings (like build.crossings INCLUDING INDEXES);
-INSERT INTO crossings
-     SELECT *
-       FROM build.crossings;
-*/
 CREATE TABLE public.routing (like build.routing INCLUDING INDEXES);
 INSERT INTO public.routing
      SELECT *
