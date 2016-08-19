@@ -21,9 +21,11 @@ Building/Use
 ------------
 
 1. Build the container:
+
     docker build .
 
 2. Launch the container:
+
     docker run --publish 44444:5432 -e POSTGRES_PASSWORD=test <image ID>
 
 You can then access the container at `localhost:44444` with the user `postgres`
