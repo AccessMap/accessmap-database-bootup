@@ -10,8 +10,8 @@ a curb ramp (within some tolerance), it will be assigned to the 'start' or
 ALTER TABLE data.sidewalks DROP COLUMN IF EXISTS curbramp_start;
 ALTER TABLE data.sidewalks DROP COLUMN IF EXISTS curbramp_end;
 
-ALTER TABLE data.sidewalks ADD COLUMN curbramp_start boolean;
-ALTER TABLE data.sidewalks ADD COLUMN curbramp_end boolean;
+ALTER TABLE data.sidewalks ADD COLUMN curbramp_start boolean DEFAULT 'f';
+ALTER TABLE data.sidewalks ADD COLUMN curbramp_end boolean DEFAULT 'f';
 
 UPDATE data.sidewalks sw
    SET curbramp_start = 't'

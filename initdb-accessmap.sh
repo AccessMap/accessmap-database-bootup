@@ -5,9 +5,10 @@ set -e
 export PGUSER=postgres
 
 # Import data
-psql -d postgres -f /sourcedata/run_insert.sql # > /dev/null
+psql -d postgres -f /sourcedata/run_insert.sql > /dev/null
 
 # Run data cleaning SQL code
 for sqlfile in /sourcedata/sql/*; do
+    echo $sqlfile
     psql -d postgres -f $sqlfile
 done

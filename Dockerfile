@@ -31,7 +31,7 @@ RUN shp2pgsql -s 2926 -d Sidewalks/Sidewalks.shp sidewalks > \
 WORKDIR /sourcedata/dem
 RUN curl -O https://prd-tnm.s3.amazonaws.com/StagedProducts/Elevation/13/ArcGrid/n48w123.zip && \
     unzip ./n48w123.zip && \
-    raster2pgsql -t 50x50 grdn48w123_13/w001001.adf data.ned13 > /sourcedata/dem.sql
+    raster2pgsql -t 64x64 grdn48w123_13/w001001.adf data.ned13 > /sourcedata/dem.sql
 
 # Files in the initdb.d directory get executed in alphabetical order -
 # 'routing.sh' is already present from pgrouting, so we have to run just after

@@ -20,7 +20,7 @@ CREATE TABLE data.streets AS
              -- FIXME: LineMerge has undesired behavior of stitching together
              -- MultiLineStrings (makes new connections) - instead, explode
              -- MultiLineStrings into new rows of LineStrings
-		     ST_Transform((ST_Dump(geom)).geom, 2926) AS geom
+		     ST_Transform((ST_Dump(geom)).geom, 26910) AS geom
 	    FROM source.streets;
 ALTER TABLE data.streets ADD COLUMN id SERIAL PRIMARY KEY;
 
@@ -34,11 +34,12 @@ CREATE INDEX streets_index
 -- Transform sidewalks data from SDOT
 CREATE TABLE data.sidewalks AS
       SELECT compkey,
-		     ST_Transform((ST_Dump(geom)).geom, 2926) AS geom,
+		     ST_Transform((ST_Dump(geom)).geom, 26910) AS geom,
 		     segkey,
              curbramphi,
              curbramplo
 	    FROM source.sidewalks;
+
 ALTER TABLE data.sidewalks ADD COLUMN id SERIAL PRIMARY KEY;
 
 CREATE INDEX sidewalks_index
@@ -46,9 +47,10 @@ CREATE INDEX sidewalks_index
        USING gist(geom);
 
 -- Delete all sidewalks that cause problems when plotting
--- FIXME: Fix ST_LineMerge errors and avoid deleting null sidewalks
 DELETE FROM data.sidewalks
       WHERE GeometryType(geom) = 'GEOMETRYCOLLECTION';
+DELETE FROM data.sidewalks
+      WHERE ST_Length(geom) = 0;
 
 -- Add new column to record the state of starting point and ending post of the sidewalk
 ALTER TABLE data.sidewalks
@@ -76,10 +78,14 @@ CREATE INDEX curbramps_index
        USING gist(geom);
 
 --
--- Step 6: Convert SRID to same as vector data
+-- Step 6: Convert SRID to same projection as vector data
 --
-UPDATE data.ned13
-   SET rast = ST_Transform(rast, 2926);
+-- FIXME: ST_Transform from 2926 to 26910 produces gaps in the raster data -
+--        some kind of per-tile error at the interface between tiles, I think.
+--        This screws up using the DEM because those gaps are null-valued and
+--        overlap with sidewalks. This seems like a bug in PostGIS/GDAL/libgeos
+-- UPDATE data.ned13
+--   SET rast = ST_Transform(rast, 26910);
 
 CREATE INDEX ned13_convexhull_index
           ON data.ned13

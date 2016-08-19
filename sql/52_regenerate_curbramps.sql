@@ -38,5 +38,5 @@ INSERT INTO build.curbramps (geom)
 --          WHERE sw.curbramp_end) AS cr;
 
 CREATE INDEX curbramps_index
-          ON curbramps
+          ON build.curbramps
        USING gist(geom);
