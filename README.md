@@ -1,7 +1,7 @@
-DSSG 2016 Sidewalks Project Files
+DSSG 2015 Sidewalks Project Files
 ---------------------------------
 
-This repo represents the work done by the 2016 DSSG Sidewalks team in Seattle,
+This repo represents the work done by the 2015 DSSG Sidewalks team in Seattle,
 WA, with some later updates for reproducibility.
 
 The primary functionality is to process municipal data for Seattle, which has
