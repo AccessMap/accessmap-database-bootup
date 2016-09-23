@@ -1,30 +1,30 @@
 \timing
 ALTER TABLE build.clean_sidewalks
- ADD COLUMN grade float;
+ ADD COLUMN grade NUMERIC(6, 4);
 
 ALTER TABLE build.clean_sidewalks
- ADD COLUMN ele_start float;
+ ADD COLUMN ele_start NUMERIC(10, 1);
 
 ALTER TABLE build.clean_sidewalks
- ADD COLUMN ele_end float;
+ ADD COLUMN ele_end NUMERIC(10, 1);
 
 ALTER TABLE build.crossings
- ADD COLUMN grade float;
+ ADD COLUMN grade NUMERIC(6, 4);
 
 ALTER TABLE build.crossings
- ADD COLUMN ele_start float;
+ ADD COLUMN ele_start NUMERIC(10, 1);
 
 ALTER TABLE build.crossings
- ADD COLUMN ele_end float;
+ ADD COLUMN ele_end NUMERIC(10, 1);
 
 ALTER TABLE data.sidewalks
- ADD COLUMN grade float;
+ ADD COLUMN grade NUMERIC(6, 4);
 
 ALTER TABLE data.sidewalks
- ADD COLUMN ele_start float;
+ ADD COLUMN ele_start NUMERIC(10, 1);
 
 ALTER TABLE data.sidewalks
- ADD COLUMN ele_end float;
+ ADD COLUMN ele_end NUMERIC(10, 1);
 
 -- Remove length-0 edges
 DELETE FROM build.clean_sidewalks

@@ -17,6 +17,11 @@ RUN curl -L -o streets.zip \
     unzip streets.zip
 RUN shp2pgsql -s 4326 -d WGS84/Street_Network_Database.shp source.streets > \
       /sourcedata/streets.sql
+# shp2pgsql took forever to use 'DROP IF EXISTS'
+# (https://trac.osgeo.org/postgis/ticket/2236)
+RUN sed -i 's/DROP TABLE/DROP TABLE IF EXISTS/g' /sourcedata/streets.sql
+# shp2pgsql also tries to drop a geometry column from a nonexistent table
+RUN sed -i '/DropGeometryColumn/d' /sourcedata/streets.sql
 
 # Download, unzip, and create SQL dump for street centerline data from
 # data.seattle.gov
@@ -26,6 +31,8 @@ RUN curl -L -o sidewalks.zip \
     unzip sidewalks.zip
 RUN shp2pgsql -s 2926 -d Sidewalks/Sidewalks.shp sidewalks > \
       /sourcedata/sidewalks.sql
+RUN sed -i 's/DROP TABLE/DROP TABLE IF EXISTS/g' /sourcedata/sidewalks.sql
+RUN sed -i '/DropGeometryColumn/d' /sourcedata/sidewalks.sql
 
 # Download and prepare raster elevation data
 WORKDIR /sourcedata/dem

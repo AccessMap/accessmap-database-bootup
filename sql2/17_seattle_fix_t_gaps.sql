@@ -41,7 +41,7 @@ ALTER TABLE build.intersections
  ADD COLUMN degree_diff double precision[];
 
 UPDATE build.intersections
-   SET degree_diff = Find_Maximum_Degree_Diff(degree, num_s);
+   SET degree_diff = Find_Maximum_Degree_Diff(azimuths, num_s);
 
           ALTER TABLE build.intersections
 DROP COLUMN IF EXISTS is_t;

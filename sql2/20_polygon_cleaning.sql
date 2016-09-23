@@ -6,13 +6,13 @@
 --- compkey (now id) is not unique, so must delete streets with non-unique IDs
 -- FIXME: don't modify data.streets at this point - should only modify tables
 --        in build schema.
-DELETE FROM data.streets
-      WHERE id IN (SELECT id
-                     FROM (SELECT id,
-                                  ROW_NUMBER() OVER (partition BY id
-                                                         ORDER BY id) AS rnum
-                             FROM data.streets) AS t
-                    WHERE t.rnum > 1);
+-- DELETE FROM data.streets
+--       WHERE id IN (SELECT id
+--                      FROM (SELECT id,
+--                                   ROW_NUMBER() OVER (partition BY id
+--                                                          ORDER BY id) AS rnum
+--                              FROM data.streets) AS t
+--                     WHERE t.rnum > 1);
 
 CREATE UNIQUE INDEX street_id
                  ON data.streets (id);

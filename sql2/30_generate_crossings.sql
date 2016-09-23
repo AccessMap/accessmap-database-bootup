@@ -105,7 +105,7 @@ ALTER TABLE build.intersection_group
  ADD COLUMN range_group int;
 
 UPDATE build.intersection_group AS rig
-   SET range_group = find_corner_groups(i.degree, ST_Azimuth(rig.i_geom, e.geom))
+   SET range_group = find_corner_groups(i.azimuths, ST_Azimuth(rig.i_geom, e.geom))
   FROM build.intersections AS i,
        build.corners AS e
  WHERE i.id = rig.i_id

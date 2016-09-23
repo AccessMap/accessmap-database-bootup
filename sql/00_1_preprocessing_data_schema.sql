@@ -96,3 +96,82 @@ CREATE INDEX ned13_convexhull_index
 --
 ALTER TABLE data.sidewalks DROP COLUMN curbramphi;
 ALTER TABLE data.sidewalks DROP COLUMN curbramplo;
+
+/*
+Because of the number (and severity) of errors, it's worthwhile to just
+redraw the entire dataset. The strategy used will be to (1) describe each
+street as having a sidewalk on the left, right, both, or none sides, then (2)
+do a linear offset for the appropriate case, and (3) in the process, trim the
+offset so it doesn't overshoot. For step (3), we'll use a buffer of all nearby
+streets.
+*/
+
+-- First, we need to figure out whether a given sidewalk is on the right or
+-- left side of the street
+ALTER TABLE data.streets ADD COLUMN sidewalk_l boolean;
+ALTER TABLE data.streets ADD COLUMN sidewalk_r boolean;
+ALTER TABLE data.streets ADD COLUMN sidewalk_dist float;
+UPDATE data.streets
+   SET sidewalk_l = false;
+UPDATE data.streets
+   SET sidewalk_r = false;
+UPDATE data.streets
+   SET sidewalk_dist = 0;
+
+-- Draw a line from a point on the sidewalk to the nearest part of the street
+CREATE TABLE close_vecs AS
+SELECT DISTINCT ON (v.sw_id) v.*,
+                           -- This calculates the azimuth from sidewalk to street, converts it to radians in a more reasonable coordinate system,
+                           -- then uses that to generate an extended line (to help with ST_LineCrossingDirection intersection)
+                           ST_AddPoint(v.vec, ST_MakePoint(ST_X(v.vec) + 0.1 * cos(-1 * ST_Azimuth(ST_StartPoint(v.vec), ST_EndPoint(v.vec)) + pi() / 2), 0.1 * sin(-1 * ST_Azimuth(ST_StartPoint(v.vec), ST_EndPoint(v.vec) + pi() / 2)))) AS vec_ext,
+                           ST_Length(v.vec::geography) AS dist
+                      FROM (SELECT sw.gid AS sw_id,
+                                   st.compkey AS st_compkey,
+                                   st.geom AS st_geom,
+                                   ST_MakeLine(ST_ClosestPoint(sw.geom, st.geom), ST_ClosestPoint(st.geom, sw.geom)) AS vec
+                             FROM (SELECT (ST_Dump(ST_Transform(geom, 4326))).*,
+                                          gid,
+                                          segkey
+                                     FROM source.sidewalks) sw
+                             JOIN (SELECT (ST_Dump(ST_Transform(geom, 4326))).*,
+                                          compkey
+                                     FROM source.streets) st
+                               ON sw.segkey = st.compkey) v
+                  ORDER BY v.sw_id;
+
+UPDATE data.streets
+   SET sidewalk_l = true
+  FROM close_vecs cv
+ WHERE compkey = cv.st_compkey
+   AND ST_LineCrossingDirection(cv.vec_ext, st_geom) = -1;
+
+UPDATE data.streets
+   SET sidewalk_r = true
+  FROM close_vecs cv
+ WHERE compkey = cv.st_compkey
+   AND ST_LineCrossingDirection(cv.vec_ext, st_geom) = 1;
+
+UPDATE data.streets
+   SET sidewalk_dist = a.dist
+  FROM (  SELECT min(dist) AS dist,
+                 st_compkey
+            FROM close_vecs
+        GROUP BY st_compkey) a
+ WHERE compkey = a.st_compkey;
+
+-- -- Create buffers for every street that has a sidewalk
+-- ALTER TABLE data.streets ADD COLUMN buffer geometry;
+-- UPDATE data.streets
+--    SET buffer = ST_Buffer(geom, sidewalk_dist)
+--  WHERE sidewalk_l
+--     OR sidewalk_r;
+--
+-- -- Now draw the sidewalks in
+-- CREATE TABLE data.sidewalks2 AS
+-- SELECT ST_OffsetCurve(geom, sidewalk_dist) AS geom
+--   FROM data.streets
+--  WHERE sidewalk_r
+--  UNION
+-- SELECT ST_OffsetCurve(geom, sidewalk_dist * -1) AS geom
+--   FROM data.streets
+--  WHERE sidewalk_l;
