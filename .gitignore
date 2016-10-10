@@ -1,2 +1,4 @@
 *.swp
 input_data/*
+python/output
+python/sourcedata

@@ -21,7 +21,7 @@ CREATE UNIQUE INDEX street_id
 DROP TABLE IF EXISTS build.blocks CASCADE;
 
 CREATE TABLE build.blocks AS
-      SELECT g.path[1] AS gid,
+      SELECT g.path[1] AS id,
              geom
         FROM (SELECT (ST_Dump(ST_Polygonize(streets.geom))).*
       	        FROM data.streets) AS g;
@@ -33,12 +33,12 @@ CREATE INDEX boundary_polygons_index
 
 -- Step 2: Remove overlap polygons
 DELETE FROM build.blocks
-      WHERE gid in (  SELECT b1.gid
-                        FROM build.blocks b1,
-                             build.blocks b2
-                       WHERE ST_Overlaps(b1.geom, b2.geom)
-                    GROUP BY b1.gid
-                      HAVING count(b1.gid) > 1);
+      WHERE id in (  SELECT b1.id
+                       FROM build.blocks b1,
+                            build.blocks b2
+                      WHERE ST_Overlaps(b1.geom, b2.geom)
+                   GROUP BY b1.id
+                     HAVING count(b1.id) > 1);
 
 -- There are 57 Polygons that have their centroid outside the polygon.
 CREATE VIEW build.weird_blocks AS
