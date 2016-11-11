@@ -1,11 +1,11 @@
 \timing
-ALTER TABLE build.clean_sidewalks
+ALTER TABLE data.sidewalks
  ADD COLUMN grade NUMERIC(6, 4);
 
-ALTER TABLE build.clean_sidewalks
+ALTER TABLE data.sidewalks
  ADD COLUMN ele_start NUMERIC(10, 1);
 
-ALTER TABLE build.clean_sidewalks
+ALTER TABLE data.sidewalks
  ADD COLUMN ele_end NUMERIC(10, 1);
 
 ALTER TABLE build.crossings
@@ -15,19 +15,10 @@ ALTER TABLE build.crossings
  ADD COLUMN ele_start NUMERIC(10, 1);
 
 ALTER TABLE build.crossings
- ADD COLUMN ele_end NUMERIC(10, 1);
-
-ALTER TABLE data.sidewalks
- ADD COLUMN grade NUMERIC(6, 4);
-
-ALTER TABLE data.sidewalks
- ADD COLUMN ele_start NUMERIC(10, 1);
-
-ALTER TABLE data.sidewalks
  ADD COLUMN ele_end NUMERIC(10, 1);
 
 -- Remove length-0 edges
-DELETE FROM build.clean_sidewalks
+DELETE FROM data.sidewalks
       WHERE ST_Length(geom) = 0;
 
 DELETE FROM build.crossings
@@ -41,10 +32,10 @@ DELETE FROM data.sidewalks
 -- spatial indices on these, and then look up the raster data
 
 CREATE TEMPORARY TABLE sidewalk_endpoints AS
-                SELECT s.id,
+                SELECT s.gid AS id,
                        ST_Transform(ST_StartPoint(s.geom), n.srid) AS startpoint,
                        ST_Transform(ST_EndPoint(s.geom), n.srid) AS endpoint
-                  FROM build.clean_sidewalks s,
+                  FROM data.sidewalks s,
                        (SELECT ST_SRID(rast) AS srid
                           FROM data.ned13
                          LIMIT 1) n;
@@ -59,7 +50,7 @@ CREATE TEMPORARY TABLE crossing_endpoints AS
                          LIMIT 1) n;
 
 CREATE TEMPORARY TABLE sidewalk_data_endpoints AS
-                SELECT s.id,
+                SELECT s.gid AS id,
                        ST_Transform(ST_StartPoint(s.geom), n.srid) AS startpoint,
                        ST_Transform(ST_EndPoint(s.geom), n.srid) AS endpoint
                   FROM data.sidewalks s,
@@ -67,19 +58,19 @@ CREATE TEMPORARY TABLE sidewalk_data_endpoints AS
                           FROM data.ned13
                          LIMIT 1) n;
 
-UPDATE build.clean_sidewalks s
+UPDATE data.sidewalks s
    SET ele_start = ST_Value(n.rast,  e.startpoint)
   FROM data.ned13 n,
        sidewalk_endpoints e
  WHERE ST_Intersects(n.rast, e.startpoint)
-   AND s.id = e.id;
+   AND s.gid = e.id;
 
-UPDATE build.clean_sidewalks s
+UPDATE data.sidewalks s
    SET ele_end = ST_Value(n.rast,  e.endpoint)
   FROM data.ned13 n,
        sidewalk_endpoints e
  WHERE ST_Intersects(n.rast, e.endpoint)
-   AND s.id = e.id;
+   AND s.gid = e.id;
 
 UPDATE build.crossings s
    SET ele_start = ST_Value(n.rast,  e.startpoint)
@@ -100,16 +91,16 @@ UPDATE data.sidewalks s
   FROM data.ned13 n,
        sidewalk_data_endpoints e
  WHERE ST_Intersects(n.rast, e.startpoint)
-   AND s.id = e.id;
+   AND s.gid = e.id;
 
 UPDATE data.sidewalks s
    SET ele_end = ST_Value(n.rast,  e.endpoint)
   FROM data.ned13 n,
        sidewalk_data_endpoints e
  WHERE ST_Intersects(n.rast, e.endpoint)
-   AND s.id = e.id;
+   AND s.gid = e.id;
 
-UPDATE build.clean_sidewalks
+UPDATE data.sidewalks
    SET grade = (ele_end - ele_start) / ST_Length(geom);
 
 UPDATE build.crossings

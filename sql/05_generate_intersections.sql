@@ -16,23 +16,28 @@ CREATE TABLE build.intersections AS
 		     geom,
 		     array_agg(s_id) AS s_id,
 		     array_agg(next) AS s_nexts,
+             array_agg(degree) AS degree,
 		     count(id) AS num_s
 	    FROM (SELECT *,
                 row_number() over() AS id
 	            FROM (SELECT starts.start_point AS geom,
-	                         id AS s_id,
-                             starts.next_point AS next
+	                         gid AS s_id,
+                             starts.next_point AS next,
+                             degree
 	                    FROM (SELECT ST_StartPoint(geom) AS start_point,
                                      ST_PointN(geom, 2) AS next_point,
-                                     id
+                                     ST_Azimuth(ST_PointN(geom, 1), ST_PointN(geom, 2)) AS degree,
+                                     gid
                                 FROM data.streets) AS starts
                        UNION
                       SELECT ends.start_point AS geom,
-	                         id AS s_id,
-	                         ends.next_point AS next
+	                         gid AS s_id,
+	                         ends.next_point AS next,
+                             degree
 	                    FROM (SELECT ST_EndPoint(geom) AS start_point,
                                      ST_PointN(geom, ST_NPoints(geom) - 1) AS next_point,
-                                     id
+                                     ST_Azimuth(ST_PointN(geom, ST_NPoints(geom)), ST_PointN(geom,ST_NPoints(geom) - 1)) AS degree,
+                                     gid
                                 FROM data.streets) AS ends) AS endpoints
 	         ORDER BY geom, ST_Azimuth(endpoints.geom, endpoints.next)) AS q2
 	GROUP BY geom;

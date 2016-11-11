@@ -46,6 +46,7 @@ def standardize(streets, sidewalks):
             return streets_w_compkey.index[0]
 
     df_sw['index_st'] = list(df_sw['SEGKEY'].apply(index_from_compkey))
+
     # Remove sidewalks pointing to nonexistent streets
     df_sw = df_sw[df_sw['index_st'] != -1]
     df_sw.drop('SEGKEY', 1, inplace=True)
@@ -54,6 +55,8 @@ def standardize(streets, sidewalks):
     df_sw.rename(columns={'CURBRAMPHI': 'curbramp_end',
                           'CURBRAMPLO': 'curbramp_start'},
                  inplace=True)
+
+    # FIXME: Remove sidewalks that are literally on top of street lines
 
     # Dedupe sidewalk lines using WKT (TODO: replace with line similarity)
     df_sw['wkt'] = df_sw.geometry.apply(lambda row: row.wkt)
@@ -65,6 +68,15 @@ def standardize(streets, sidewalks):
     #
     df_st = streets.copy()
 
+    # Remove streets with COMPKEY = 0 or negative.
+    df_st = df_st[df_st['COMPKEY'] > 0]
+
+    # Remove 'streets' that we should ignore for cleaning
+    # ST_CODE 22 seems to be applied to trails
+    df_st = df_st[df_st['ST_CODE'] != 22]
+    # ST_CODE 4 seems to be applied to highways
+    df_st = df_st[df_st['ST_CODE'] != 4]
+
     df_st = df_st[['geometry']]
     df_st.crs = streets.crs
 
@@ -72,6 +84,9 @@ def standardize(streets, sidewalks):
     df_st['wkt'] = df_st.geometry.apply(lambda row: row.wkt)
     df_st.drop_duplicates(['wkt'], inplace=True)
     df_st.drop('wkt', 1, inplace=True)
+
+    # Add an index col
+    df_st['index'] = list(df_st.index)
 
     #
     # Restore the CRS for both tables

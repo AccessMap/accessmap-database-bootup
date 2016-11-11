@@ -1,6 +1,6 @@
 *.swp
 input_data/*
-python/output
-python/sourcedata
-python/venv
+notebooks/output
+notebooks/sourcedata
+notebooks/venv
 clean

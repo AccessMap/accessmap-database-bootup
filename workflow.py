@@ -22,10 +22,16 @@ if __name__ == '__main__':
     sidewalks = clean.reproject(sidewalks)
 
     print 'Assigning sidewalk side to streets'
-    streets = clean.sw_tag_streets(sidewalks, streets)
+    sidewalks = clean.sw_tag_streets(sidewalks, streets)
 
     print 'Drawing sidewalks'
-    sidewalks = clean.draw_sidewalks(streets)
+    sidewalks = clean.redraw_sidewalks(sidewalks, streets)
+
+    print 'Cleaning with street buffers'
+    sidewalks, buffers = clean.buffer_clean(sidewalks, streets)
+
+    print 'Sanitizing sidewalks'
+    sidewalks = clean.sanitize(sidewalks)
 
     print 'Snapping sidewalk ends'
     sidewalks = clean.snap(sidewalks, streets)

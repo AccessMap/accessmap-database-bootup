@@ -3,13 +3,13 @@ DROP TABLE IF EXISTS public.routing;
 CREATE TABLE public.routing AS
       SELECT row_number() over()::integer AS id,
                                              q.*
-        FROM (   SELECT id AS o_id,
-                              geom,
-                              grade,
-                              0 AS isCrossing,
-                              ST_Length(geom::geography),
-                              1 AS source,
-                              1 AS target
+        FROM (   SELECT gid AS o_id,
+                               geom,
+                               grade,
+                               0 AS isCrossing,
+                               ST_Length(geom::geography),
+                               1 AS source,
+                               1 AS target
                    FROM public.sidewalks
               UNION ALL
                  SELECT id AS o_id,

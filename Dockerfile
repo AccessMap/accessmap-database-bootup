@@ -58,23 +58,23 @@ RUN python workflow.py \
 # network, etc
 #
 
-# RUN shp2pgsql -s 4326 -d clean/streets.shp source.streets > \
-#       /sourcedata/streets.sql
-# # shp2pgsql took forever to use 'DROP IF EXISTS'
-# # (https://trac.osgeo.org/postgis/ticket/2236)
-# RUN sed -i 's/DROP TABLE/DROP TABLE IF EXISTS/g' /sourcedata/streets.sql
-# # shp2pgsql also tries to drop a geometry column from a nonexistent table
-# RUN sed -i '/DropGeometryColumn/d' /sourcedata/streets.sql
-#
-# RUN shp2pgsql -s 2926 -d clean/sidewalks.shp sidewalks > \
-#       /sourcedata/sidewalks.sql
-# RUN sed -i 's/DROP TABLE/DROP TABLE IF EXISTS/g' /sourcedata/sidewalks.sql
-# RUN sed -i '/DropGeometryColumn/d' /sourcedata/sidewalks.sql
-#
-# # Files in the initdb.d directory get executed in alphabetical order -
-# # 'routing.sh' is already present from pgrouting, so we have to run just after
-# # that. The data is loaded during container deployment, not built-in, following
-# # postgres docker container standards.
-# COPY ./run_insert.sql /sourcedata/run_insert.sql
-# COPY ./sql /sourcedata/sql
-# COPY ./initdb-accessmap.sh /docker-entrypoint-initdb.d/setup_accessmap.sh
+RUN shp2pgsql -S -s 26910 -d clean/streets.shp data.streets > \
+      /sourcedata/streets.sql
+# shp2pgsql took forever to use 'DROP IF EXISTS'
+# (https://trac.osgeo.org/postgis/ticket/2236)
+RUN sed -i 's/DROP TABLE/DROP TABLE IF EXISTS/g' /sourcedata/streets.sql
+# shp2pgsql also tries to drop a geometry column from a nonexistent table
+RUN sed -i '/DropGeometryColumn/d' /sourcedata/streets.sql
+
+RUN shp2pgsql -S -s 26910 -d clean/sidewalks.shp data.sidewalks > \
+      /sourcedata/sidewalks.sql
+RUN sed -i 's/DROP TABLE/DROP TABLE IF EXISTS/g' /sourcedata/sidewalks.sql
+RUN sed -i '/DropGeometryColumn/d' /sourcedata/sidewalks.sql
+
+# Files in the initdb.d directory get executed in alphabetical order -
+# 'routing.sh' is already present from pgrouting, so we have to run just after
+# that. The data is loaded during container deployment, not built-in, following
+# postgres docker container standards.
+COPY ./run_insert.sql /sourcedata/run_insert.sql
+COPY ./sql /sourcedata/sql
+COPY ./initdb-accessmap.sh /docker-entrypoint-initdb.d/setup_accessmap.sh

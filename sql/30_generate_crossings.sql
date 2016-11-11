@@ -1,16 +1,3 @@
-/*
-input tables:
-    clean_sidewalks
-    intersections
-
-output tables:
-    corners
-    intersection_group
-    corner_group
-    crossings
-
-*/
-
 DROP TABLE IF EXISTS build.corners;
 
 CREATE TABLE build.corners AS
@@ -21,16 +8,16 @@ CREATE TABLE build.corners AS
              ST_Collect(s_geom) AS s_geom,
              count(id) AS num_sw
         FROM (SELECT ST_Startpoint(geom) AS geom,
-                     id,
+                     gid AS id,
                      'S' AS type,
                      geom AS s_geom
-                FROM build.clean_sidewalks
+                FROM data.sidewalks
                UNION
               SELECT ST_Endpoint(geom) AS geom,
-                     id,
+                     gid AS id,
                      'E' AS type,
                      geom AS s_geom
-                FROM build.clean_sidewalks) AS query
+                FROM data.sidewalks) AS query
     GROUP BY geom
       HAVING geom IS NOT NULL;
 
@@ -105,7 +92,7 @@ ALTER TABLE build.intersection_group
  ADD COLUMN range_group int;
 
 UPDATE build.intersection_group AS rig
-   SET range_group = find_corner_groups(i.azimuths, ST_Azimuth(rig.i_geom, e.geom))
+   SET range_group = find_corner_groups(i.degree, ST_Azimuth(rig.i_geom, e.geom))
   FROM build.intersections AS i,
        build.corners AS e
  WHERE i.id = rig.i_id

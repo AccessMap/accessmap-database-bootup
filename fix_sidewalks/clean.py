@@ -22,6 +22,10 @@ def sw_tag_streets(sidewalks, streets):
     st_by_sw = streets.loc[list(sidewalks['index_st'])].geometry
     sidewalks['st_geometry'] = list(st_by_sw)
 
+    sidewalks = sidewalks[~sidewalks.geometry.is_empty]
+    sidewalks = sidewalks[~sidewalks['geometry'].isnull()]
+    sidewalks = sidewalks[~sidewalks['st_geometry'].isnull()]
+
     def closest_point(point, linestring):
         return linestring.interpolate(linestring.project(point))
 
@@ -31,9 +35,22 @@ def sw_tag_streets(sidewalks, streets):
     sidewalks['nearpoint_st'] = sidewalks.apply(cp_apply, axis=1)
 
     def sw_st_dist(row):
-        return row.geometry.distance(row['st_geometry'])
+        return max(row.geometry.distance(row['st_geometry']), 4)
 
     sidewalks['offset'] = sidewalks.apply(sw_st_dist, axis=1)
+
+    # Remove sidewalks that are colinear with their street
+    def colinear_sw(row):
+        sw = row['geometry']
+        st = row['st_geometry']
+        for coord in sw.coords:
+            # 10 centimeters
+            if geometry.Point(coord).distance(st) > 0.1:
+                return False
+        return True
+
+    colinear = sidewalks.apply(colinear_sw, axis=1)
+    sidewalks = sidewalks[~colinear]
 
     #
     # Calculate which side the sidewalk is on
@@ -76,72 +93,120 @@ def sw_tag_streets(sidewalks, streets):
                                                 'left')
 
     # Go back to streets and update
-    def sw_side_of_street(group):
-        sides = group['side']
-        right = 'right' in sides.values
-        left = 'left' in sides.values
-        if right:
-            if left:
-                label = 'both'
-            else:
-                label = 'right'
-        elif left:
-            label = 'left'
-        else:
-            label = 'none'
+    # def sw_side_of_street(group):
+    #     sides = group['side']
+    #     right = 'right' in sides.values
+    #     left = 'left' in sides.values
+    #     if right:
+    #         if left:
+    #             label = 'both'
+    #         else:
+    #             label = 'right'
+    #     elif left:
+    #         label = 'left'
+    #     else:
+    #         label = 'none'
 
-        return pd.DataFrame({
-            'side': [label],
-            'offset': [group['offset'].min()],
-            'index_st': [group['index_st'].iloc[0]]
-        }, index=group.index)
+    #     return pd.DataFrame({
+    #         'side': [label],
+    #         'offset': [group['offset'].min()],
+    #         'index_st': [group['index_st'].iloc[0]]
+    #     }, index=group.index)
 
-    sides = sidewalks.groupby('index_st').apply(sw_side_of_street)
+    # sides = sidewalks.groupby('index_st').apply(sw_side_of_street)
 
-    sides = sides.set_index('index_st').loc[streets.index]
-    sides = sides.drop_duplicates()
-    streets['offset'] = sides['offset'].apply(lambda x: max(x, 4))
-    streets['sidewalk'] = sides['side']
-    streets['offset'] = streets['offset'].fillna(0)
-    streets['sidewalk'] = streets['sidewalk'].fillna('none')
-    streets.reset_index(drop=True, inplace=True)
+    # sides = sides.set_index('index_st').loc[streets.index]
+    # sides = sides.drop_duplicates()
+    # streets['offset'] = sides['offset'].apply(lambda x: max(x, 4))
+    # streets['sidewalk'] = sides['side']
+    # streets['offset'] = streets['offset'].fillna(0)
+    # streets['sidewalk'] = streets['sidewalk'].fillna('none')
+    # streets.reset_index(drop=True, inplace=True)
 
-    return streets
+    return sidewalks
 
 
-def draw_sidewalks(streets):
+def redraw_sidewalks(sidewalks, streets):
+    #
+    # Draw sidewalks as parallel offsets of streets
+    #
+
+    # Simplify streets slightly - removes small jutting out points at end of
+    # sidewalks
+    streets.geometry = streets.geometry.simplify(0.05)
+
     # Takes about 1.5 minutes
     rows = []
     # Use streets with a valid geometry only
-    streets = streets[streets.geometry.astype(bool)]
-    for i, row in streets.iterrows():
+    sidewalks = sidewalks[sidewalks['st_geometry'].astype(bool)]
+    for idx, row in sidewalks.iterrows():
         queue = []
-        if row['sidewalk'] == 'both':
-            queue.append(row.geometry.parallel_offset(row['offset'], 'left'))
-            queue.append(row.geometry.parallel_offset(row['offset'], 'right'))
-        elif row['sidewalk'] == 'left':
-            queue.append(row.geometry.parallel_offset(row['offset'], 'left'))
-        elif row['sidewalk'] == 'right':
-            queue.append(row.geometry.parallel_offset(row['offset'], 'right'))
+        st_geom = streets.loc[row['index_st']].geometry
+        if row['side'] == 'both':
+            queue.append(st_geom.parallel_offset(row['offset'], 'left'))
+            queue.append(st_geom.parallel_offset(row['offset'], 'right'))
+        elif row['side'] == 'left':
+            queue.append(st_geom.parallel_offset(row['offset'], 'left'))
+        elif row['side'] == 'right':
+            queue.append(st_geom.parallel_offset(row['offset'], 'right'))
 
         for geom in queue:
             df = gpd.GeoDataFrame({'geometry': [geom],
-                                   'index_st': row.name})
+                                   'index_st': row['index_st'],
+                                   'curbramp_start': row['curbramp_start'],
+                                   'curbramp_end': row['curbramp_end'],
+                                   'offset': row['offset']})
             rows.append(df)
 
+    crs = sidewalks.crs
     sidewalks = pd.concat(rows)
-    sidewalks.crs = streets.crs
+    sidewalks = sidewalks[~sidewalks.geometry.is_empty]
+    sidewalks.crs = crs
 
-    def buffer_st(row, downscale=0.97):
+    # Remove empty geometries
+    sidewalks = sidewalks[~sidewalks.geometry.is_empty]
+    sidewalks.reset_index(drop=True, inplace=True)
+
+    return sidewalks
+
+
+def buffer_clean(sidewalks, streets):
+    sidewalks = sidewalks.copy()
+    streets = streets.copy()
+    #
+    # Create street buffers
+    #
+
+    # Default to 4 meter buffer, use sidewalk offset data if available
+    streets['offset'] = 4
+    for idx, group in sidewalks.groupby('index_st'):
+        # Use min offset
+        offset = group['offset'].min()
+        # There are occasional unexpected errors where sidewalks are assigned
+        # to streets that are way too far away. When this occurs, they should
+        # not be drawn (offset = 0)
+        if offset > 20:
+            offset = 0
+        streets.loc[idx, 'offset'] = offset
+
+    # Remove empty geometries
+    streets = streets[~streets.geometry.is_empty]
+    streets = streets[~streets.geometry.isnull()]
+
+    # Remove 0-offset buffers
+    streets = streets[streets['offset'] != 0]
+
+    def buffer_st(row, downscale=0.90):
         return row.geometry.buffer(downscale * row['offset'])
 
-    streets = streets[~streets.geometry.is_empty]
     buffers = gpd.GeoDataFrame({
         'geometry': streets.apply(buffer_st, axis=1)
     })
     buffers.sindex
 
-    sidewalks = sidewalks[~sidewalks.geometry.is_empty]
+    #
+    # Trim new sidewalk lines by street buffers
+    #
 
     def trim_by_buffer(linestring, buffer_df):
         ixns = buffer_df.sindex.intersection(linestring.bounds, objects=True)
@@ -153,43 +218,76 @@ def draw_sidewalks(streets):
         return linestring
 
     def tbf_apply(row):
-        return trim_by_buffer(row.geometry, buffers)
+        ls = trim_by_buffer(row.geometry, buffers)
+        copy = row.copy()
+        copy['geometry'] = ls
+        return copy
 
-    sidewalks = sidewalks.apply(tbf_apply, axis=1)
-    sidewalks = gpd.GeoDataFrame(geometry=sidewalks)
+    sidewalks_trimmed = gpd.GeoDataFrame(sidewalks.apply(tbf_apply, axis=1))
+    sidewalks.update(sidewalks_trimmed)
 
     # Remove empty geometries
     sidewalks = sidewalks[~sidewalks.geometry.is_empty]
+    sidewalks.reset_index(drop=True, inplace=True)
 
-    # Convert MultiLineStrings to LineStrings, removing very short segments in
-    # the process
-    ls = sidewalks[sidewalks.type == 'LineString']
+    return sidewalks, buffers
+
+
+def sanitize(sidewalks):
+    # Separate simple lines (LineStrings) from multi-part MultiLineStrings
+    # ls = sidewalks[sidewalks.type == 'LineString']
+    crs = sidewalks.crs
+    # sidewalks = gpd.GeoDataFrame(sidewalks)
+
     multi_ls = sidewalks[sidewalks.type == 'MultiLineString']
 
-    lines = []
-    for i, row in multi_ls.iterrows():
+    # Remove short pieces from MultiLineStrings, update
+    min_len = 10
+    ls = []
+    for idx, row in multi_ls.iterrows():
         geoms = row.geometry.geoms
-        # TODO: revisit - it was enumerating over 'lines' each time, may have
-        # introduced new bugs by fixing this
-        for i, line in enumerate(reversed(geoms)):
-            if line.length > 2:
-                lines.append(line)
+        keep_n = sum([geom.length > min_len for geom in geoms])
+        if not keep_n:
+            # Keep the longest geom
+            newrow = row.copy()
+            newrow['geometry'] = sorted(geoms, key=lambda x: x.length)[-1]
+            ls.append(newrow)
+        else:
+            # Keep all geoms above length threshold
+            n = len(geoms)
+            for j, geom in enumerate(geoms):
+                if geom.length > min_len:
+                    newrow = row.copy()
+                    newrow['geometry'] = geom
+                    newrow['curbramp_start'] = 'N'
+                    newrow['curbramp_end'] = 'N'
+                    if j == 0:
+                        newrow['curbramp_start'] = 'Y'
+                    elif j == (n - 1):
+                        newrow['curbramp_end'] = 'Y'
+                    ls.append(newrow)
 
-    sidewalks = pd.concat([ls, gpd.GeoDataFrame(geometry=lines)])
+    # FIXME: bug encountered attempting to setitem in pandas dataframe
+    # with MultiLineString - report upstream!
+    # sidewalks.loc[idx, 'geometry'] = geom
+
+    multi = gpd.GeoDataFrame(ls)
+    single = sidewalks[sidewalks.type == 'LineString']
+
+    sidewalks = pd.concat([single, multi])
     sidewalks.reset_index(drop=True, inplace=True)
-    sidewalks['index'] = sidewalks.index
-
-    sidewalks.crs = streets.crs
+    sidewalks.crs = crs
 
     return sidewalks
 
 
-def snap(sidewalks, streets):
+def snap(sidewalks, streets, short_dist=2, long_dist=12):
     sidewalks = sidewalks.copy()
+    streets = streets.copy()
     # Snap behavior - need to locate sidewalk ends within a certain distance
-    n = sidewalks.shape[0]
     starts = sidewalks.geometry.apply(lambda x: geometry.Point(x.coords[0]))
     ends = sidewalks.geometry.apply(lambda x: geometry.Point(x.coords[-1]))
+    n = sidewalks.shape[0]
     ends = gpd.GeoDataFrame({
         'sidewalk_index': 2 * list(sidewalks.index),
         'endtype': n * ['start'] + n * ['end'],
@@ -229,7 +327,8 @@ def snap(sidewalks, streets):
 
         return snapped
 
-    simple_tosnap = ends[(ends['near_dist'] < 1) & (ends['near_dist'] > 0)]
+    simple_tosnap = ends[(ends['near_dist'] < short_dist) &
+                         (ends['near_dist'] > 0)]
     snapped_geoms = simple_tosnap.apply(simple_snap, axis=1)
     ends_snapped = snapped_geoms.to_frame('geometry')
     ends_snapped['near_dist'] = 0.0
@@ -334,8 +433,15 @@ def snap(sidewalks, streets):
                     return row.geometry
         return point
 
-    snap_dist = 10
-    nearby = ends['near_dist'] < snap_dist
+    # FIXME: if long_dist is increased, we end up with dead end sidewalks
+    # being connected (when they shouldn't be, by default).
+    # Idea: detect 'dead-end' streets nearby/between the sidewalks and don't
+    # connect if they exist
+    # Alternative: the gaps that still need fixing are T-intersections. They
+    # happen because the buffers endcaps can extend past streets at a T
+    # intersection and impact the wrong sidewalks. A more nuanced buffer
+    # system would help
+    nearby = ends['near_dist'] < long_dist
     nonzero = ends['near_dist'] > 0
     ends_tosnap = ends[nearby & nonzero]
     ends_snapped = ends_tosnap.apply(snap, axis=1).to_frame('geometry')
