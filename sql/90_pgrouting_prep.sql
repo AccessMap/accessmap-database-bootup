@@ -7,7 +7,7 @@ CREATE TABLE public.routing AS
                                geom,
                                grade,
                                0 AS isCrossing,
-                               ST_Length(geom::geography),
+                               ST_Length(geom::geography) AS length,
                                1 AS source,
                                1 AS target
                    FROM public.sidewalks
@@ -16,7 +16,7 @@ CREATE TABLE public.routing AS
                               geom,
                               grade,
                               1 AS isCrossing,
-                              ST_Length(geom::geography),
+                              ST_Length(geom::geography) AS length,
                               1 AS source,
                               1 AS target
                    FROM public.crossings) AS q
