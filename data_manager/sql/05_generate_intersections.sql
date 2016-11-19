@@ -8,7 +8,7 @@ DROP TABLE IF EXISTS build.intersections;
 -- Note: For each intersection, the street id, points and azimuth is sorted in clock-wise order.
 -- FIXME: Using the azimuths out of intersections is not perfect, because many
 -- of the street geometries are weird near the intersection, pointing at funny
--- angles (e.g data.street with id 25741 near 41st & 15th). Should use a new
+-- angles (e.g street with id 25741 near 41st & 15th). Should use a new
 -- strategy to decide whether sidewalk ends should be considered 'grouped',
 -- i.e. potentially merged.
 CREATE TABLE build.intersections AS
@@ -28,7 +28,7 @@ CREATE TABLE build.intersections AS
                                      ST_PointN(geom, 2) AS next_point,
                                      ST_Azimuth(ST_PointN(geom, 1), ST_PointN(geom, 2)) AS degree,
                                      gid
-                                FROM data.streets) AS starts
+                                FROM streets) AS starts
                        UNION
                       SELECT ends.start_point AS geom,
 	                         gid AS s_id,
@@ -38,7 +38,7 @@ CREATE TABLE build.intersections AS
                                      ST_PointN(geom, ST_NPoints(geom) - 1) AS next_point,
                                      ST_Azimuth(ST_PointN(geom, ST_NPoints(geom)), ST_PointN(geom,ST_NPoints(geom) - 1)) AS degree,
                                      gid
-                                FROM data.streets) AS ends) AS endpoints
+                                FROM streets) AS ends) AS endpoints
 	         ORDER BY geom, ST_Azimuth(endpoints.geom, endpoints.next)) AS q2
 	GROUP BY geom;
 

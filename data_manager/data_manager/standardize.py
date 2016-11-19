@@ -52,8 +52,8 @@ def standardize(streets, sidewalks):
     df_sw.drop('SEGKEY', 1, inplace=True)
 
     # Rename columns to standardized scheme
-    df_sw.rename(columns={'CURBRAMPHI': 'curbramp_end',
-                          'CURBRAMPLO': 'curbramp_start'},
+    df_sw.rename(columns={'CURBRAMPHI': 'ramp_end',
+                          'CURBRAMPLO': 'ramp_start'},
                  inplace=True)
 
     # FIXME: Remove sidewalks that are literally on top of street lines
@@ -67,9 +67,6 @@ def standardize(streets, sidewalks):
     # Standardize the streets table
     #
     df_st = streets.copy()
-
-    # Remove streets with COMPKEY = 0 or negative.
-    df_st = df_st[df_st['COMPKEY'] > 0]
 
     # Remove 'streets' that we should ignore for cleaning
     # ST_CODE 22 seems to be applied to trails
@@ -85,8 +82,11 @@ def standardize(streets, sidewalks):
     df_st.drop_duplicates(['wkt'], inplace=True)
     df_st.drop('wkt', 1, inplace=True)
 
-    # Add an index col
+    # Save index as column (survives read/write to filesystem)
     df_st['index'] = list(df_st.index)
+
+    # Remove sidewalks that no longer have streets
+    df_sw = df_sw[df_sw['index_st'].apply(lambda r: r in df_st.index)]
 
     #
     # Restore the CRS for both tables

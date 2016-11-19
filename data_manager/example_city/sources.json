@@ -1,0 +1,17 @@
+{
+  "sidewalks": {
+    "url": "https://data.seattle.gov/api/assets/038178CC-C40F-4FD2-912C-1E1CF2602D00?download=true",
+    "ftype": "zip",
+    "shapefile": "Sidewalks/Sidewalks"
+  },
+  "streets": {
+    "url": "https://data.seattle.gov/download/afip-2mzr/application%2Fzip",
+    "ftype": "zip",
+    "shapefile": "StatePlane/Street_Network_Database"
+  },
+  "curbramps": {
+    "url": "https://data.seattle.gov/api/assets/F216D373-7F6E-4995-AFB8-008EFEB78E6F?download=true",
+    "ftype": "zip",
+    "shapefile": "Curb_Ramps/Curb_Ramps"
+  }
+}

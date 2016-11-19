@@ -4,13 +4,11 @@ import pandas as pd
 from shapely import geometry
 
 
-def reproject(df, projection='26910'):
-    return df.to_crs({'init': 'epsg:26910'})
-
-
 def sw_tag_streets(sidewalks, streets):
     sidewalks = sidewalks.copy()
     streets = streets.copy()
+
+    crs = sidewalks.crs
 
     #
     # Calculate the distance between every sidewalk and it street
@@ -19,7 +17,15 @@ def sw_tag_streets(sidewalks, streets):
     # Calculate the midpoint, find the associated street geometry and its
     # closest point
     sidewalks['midpoint'] = sidewalks.interpolate(0.5, normalized=True)
+
+    # Recreate street index column to match pandas index, not separate column
+    def index_from_col(value):
+        return streets[streets['index'] == value].index[0]
+        # return streets[streets['index'] == value].iloc[0].name
+
+    sidewalks['index_st'] = list(sidewalks['index_st'].apply(index_from_col))
     st_by_sw = streets.loc[list(sidewalks['index_st'])].geometry
+
     sidewalks['st_geometry'] = list(st_by_sw)
 
     sidewalks = sidewalks[~sidewalks.geometry.is_empty]
@@ -92,6 +98,27 @@ def sw_tag_streets(sidewalks, streets):
     sidewalks['side'] = sidewalks['side'].apply(lambda x: 'right' if x > 0 else
                                                 'left')
 
+    # dedupe - there should only be *one* sidewalk on a given side of a street
+    def st_side_unique(group):
+        # will return a modified version of the first row of the group
+        newrow = group.iloc[0].copy()
+
+        # maintain curb ramp information as much as possible, erroring on the
+        # side of the existence of a curb ramp
+        if 'Y' in group['ramp_start'].values:
+            newrow['ramp_start'] = 'Y'
+
+        if 'Y' in group['ramp_end'].values:
+            newrow['ramp_end'] = 'Y'
+
+        # Keep the offset as the closest one
+        newrow['offset'] = group['offset'].min()
+
+        return newrow
+
+    grouped = sidewalks.groupby(['index_st', 'side'])
+    sidewalks = gpd.GeoDataFrame(grouped.apply(st_side_unique))
+
     # Go back to streets and update
     # def sw_side_of_street(group):
     #     sides = group['side']
@@ -123,10 +150,13 @@ def sw_tag_streets(sidewalks, streets):
     # streets['sidewalk'] = streets['sidewalk'].fillna('none')
     # streets.reset_index(drop=True, inplace=True)
 
+    sidewalks.crs = crs
+
     return sidewalks
 
 
 def redraw_sidewalks(sidewalks, streets):
+    crs = sidewalks.crs
     #
     # Draw sidewalks as parallel offsets of streets
     #
@@ -153,12 +183,11 @@ def redraw_sidewalks(sidewalks, streets):
         for geom in queue:
             df = gpd.GeoDataFrame({'geometry': [geom],
                                    'index_st': row['index_st'],
-                                   'curbramp_start': row['curbramp_start'],
-                                   'curbramp_end': row['curbramp_end'],
+                                   'ramp_start': row['ramp_start'],
+                                   'ramp_end': row['ramp_end'],
                                    'offset': row['offset']})
             rows.append(df)
 
-    crs = sidewalks.crs
     sidewalks = pd.concat(rows)
     sidewalks = sidewalks[~sidewalks.geometry.is_empty]
     sidewalks.crs = crs
@@ -171,6 +200,7 @@ def redraw_sidewalks(sidewalks, streets):
 
 
 def buffer_clean(sidewalks, streets):
+    # FIXME: this is a very slow step
     sidewalks = sidewalks.copy()
     streets = streets.copy()
     #
@@ -259,12 +289,12 @@ def sanitize(sidewalks):
                 if geom.length > min_len:
                     newrow = row.copy()
                     newrow['geometry'] = geom
-                    newrow['curbramp_start'] = 'N'
-                    newrow['curbramp_end'] = 'N'
+                    newrow['ramp_start'] = 'N'
+                    newrow['ramp_end'] = 'N'
                     if j == 0:
-                        newrow['curbramp_start'] = 'Y'
+                        newrow['ramp_start'] = 'Y'
                     elif j == (n - 1):
-                        newrow['curbramp_end'] = 'Y'
+                        newrow['ramp_end'] = 'Y'
                     ls.append(newrow)
 
     # FIXME: bug encountered attempting to setitem in pandas dataframe
@@ -282,6 +312,7 @@ def sanitize(sidewalks):
 
 
 def snap(sidewalks, streets, short_dist=2, long_dist=12):
+    # FIXME: this is a very slow step
     sidewalks = sidewalks.copy()
     streets = streets.copy()
     # Snap behavior - need to locate sidewalk ends within a certain distance
@@ -389,7 +420,12 @@ def snap(sidewalks, streets, short_dist=2, long_dist=12):
                 # Given a line segment, find the line (mx + b)
                 # parameters m and b
                 xs, ys = segment.xy
-                m = (ys[1] - ys[0]) / (xs[1] - xs[0])
+                try:
+                    m = (ys[1] - ys[0]) / (xs[1] - xs[0])
+                except ZeroDivisionError:
+                    # Some kind of numeric error - xs very close together.
+                    # Implies vertical-ish line, just make m very large
+                    m = 1e10
                 b = ys[0] - (m * xs[0])
                 return (m, b)
 

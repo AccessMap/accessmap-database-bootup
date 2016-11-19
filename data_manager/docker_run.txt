@@ -1,0 +1,14 @@
+# Download, fetch, clean the data, etc into target dir. Note that the 'cities'
+# directory will be modified
+docker build --tag dm . && docker run -v $(pwd):/sourcedata dm all seattle
+
+# Run a pgrouting database
+docker run --name accessmapdb -p 44444:5432 -e POSTGRES_PASSWORD=test -e PGDATA=/var/lib/postgresql/data/pgdata -v $(pwd)/pgsql_data:/var/lib/postgresql/data/pgdata starefossen/pgrouting:9.4-2.1-2.1
+
+# Load the data into your database
+docker run -it --link accessmapdb -v $(pwd):/wd -w /wd starefossen/pgrouting:9.4-2.1-2.1 sh ./load.sh seattle postgres://postgres:test@accessmapdb:5432/postgres
+
+# Run the final cleanup steps and create the routing table.
+# TODO: the final cleanup steps should happen in Python during the original
+# cleaning
+docker run -it --link accessmapdb -v $(pwd):/wd -w /wd starefossen/pgrouting:9.4-2.1-2.1 sh ./finalize_cleanup.sh seattle postgres://postgres:test@accessmapdb:5432/postgres

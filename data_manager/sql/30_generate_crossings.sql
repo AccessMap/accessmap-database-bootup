@@ -11,13 +11,13 @@ CREATE TABLE build.corners AS
                      gid AS id,
                      'S' AS type,
                      geom AS s_geom
-                FROM data.sidewalks
+                FROM sidewalks
                UNION
               SELECT ST_Endpoint(geom) AS geom,
                      gid AS id,
                      'E' AS type,
                      geom AS s_geom
-                FROM data.sidewalks) AS query
+                FROM sidewalks) AS query
     GROUP BY geom
       HAVING geom IS NOT NULL;
 
@@ -114,15 +114,15 @@ CREATE TABLE build.corner_group AS
                 FROM build.intersection_group AS rig
             GROUP BY i_id,i_geom, range_group) AS q;
 
-DROP TABLE IF EXISTS build.crossings;
+DROP TABLE IF EXISTS crossings;
 
-CREATE TABLE build.crossings(id SERIAL PRIMARY KEY,
+CREATE TABLE crossings(id SERIAL PRIMARY KEY,
                              geom Geometry,
                              c1_id int,
                              c2_id int);
 
 CREATE INDEX crossings_index
-          ON build.crossings
+          ON crossings
        USING gist(geom);
 
 
@@ -133,7 +133,7 @@ FIXME: This is the section that is currently the most broken -
 Logic: Generate cross join on all corner groups at an intersection,
        only make line joining a given pair if it crosses a street
 */
-INSERT INTO build.crossings (geom, c1_id, c2_id)
+INSERT INTO crossings (geom, c1_id, c2_id)
      SELECT ST_MakeLine(q1.c_geom, q2.c_geom) as geom,
                         q1.id AS c1_id,
                         q2.id AS c2_id
@@ -160,7 +160,7 @@ INSERT INTO build.crossings (geom, c1_id, c2_id)
              OR
              q1.range_group/num.count = q2.range_group);
 
-INSERT INTO build.crossings (geom, c1_id, c2_id)
+INSERT INTO crossings (geom, c1_id, c2_id)
      SELECT ST_MakeLine(q1.c_geom, q2.c_geom),
             q1.id AS c1_id,
             q2.id AS c2_id
@@ -189,7 +189,7 @@ INSERT INTO build.crossings (geom, c1_id, c2_id)
         AND (q1.range_group + 1 = q2.range_group
          OR q1.range_group/num.count = q2.range_group);
 
-INSERT INTO build.crossings (geom, c1_id, c2_id)
+INSERT INTO crossings (geom, c1_id, c2_id)
      SELECT ST_ShortestLine(q1.s_geom, q2.c_geom) as geom,
             q1.id AS c1_id,
             q2.id AS c2_id
@@ -225,12 +225,12 @@ INSERT INTO build.crossings (geom, c1_id, c2_id)
 
 /* Remove crossings that intersect more than one street (usually incorrect
 crossings e.g. ones that go across an intersection diagonally) */
-DELETE FROM build.crossings
+DELETE FROM crossings
 WHERE id IN (SELECT counts.crossings_id
                FROM (SELECT c.id AS crossings_id,
                             count(c.id) AS num
-                       FROM data.streets AS s,
-                            build.crossings AS c
+                       FROM streets AS s,
+                            crossings AS c
                        WHERE ST_Intersects(s.geom, c.geom)
                     GROUP BY (c.id)) AS counts
               WHERE counts.num > 1);

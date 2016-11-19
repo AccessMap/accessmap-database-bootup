@@ -1,6 +1,9 @@
 *.swp
-input_data/*
+*.pyc
 notebooks/output
 notebooks/sourcedata
 notebooks/venv
-clean
+pgsql_data
+data_manager/cities/*
+data_manager/pgsql_data
+venv
