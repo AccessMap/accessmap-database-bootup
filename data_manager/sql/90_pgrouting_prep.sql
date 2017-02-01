@@ -8,6 +8,7 @@ CREATE TABLE routing AS
                                grade,
                                0 AS isCrossing,
                                ST_Length(geom::geography) AS length,
+                               false AS curbramps,
                                1 AS source,
                                1 AS target
                    FROM sidewalks
@@ -17,6 +18,7 @@ CREATE TABLE routing AS
                               grade,
                               1 AS isCrossing,
                               ST_Length(geom::geography) AS length,
+                              curbramps,
                               1 AS source,
                               1 AS target
                    FROM crossings) AS q
