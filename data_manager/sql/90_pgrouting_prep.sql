@@ -6,9 +6,9 @@ CREATE TABLE routing AS
         FROM (   SELECT gid AS o_id,
                                geom,
                                grade,
-                               0 AS isCrossing,
+                               FALSE AS iscrossing,
                                ST_Length(geom::geography) AS length,
-                               false AS curbramps,
+                               FALSE AS curbramps,
                                1 AS source,
                                1 AS target
                    FROM sidewalks
@@ -16,7 +16,7 @@ CREATE TABLE routing AS
                  SELECT id AS o_id,
                               geom,
                               grade,
-                              1 AS isCrossing,
+                              TRUE AS isCcossing,
                               ST_Length(geom::geography) AS length,
                               curbramps,
                               1 AS source,

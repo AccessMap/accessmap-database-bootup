@@ -1,97 +1,150 @@
-import geopandas as gpd
-import pandas as pd
 
 
-def standardize(streets, sidewalks):
-    '''Clean up the streets and sidewalks tables for Seattle into a
-    standardized naming scheme.
+def _filter_columns(df, metadata):
+    '''Filters initial data frame to include only the columns specified in
+    the metadata document (and the geometry column). Also renames those
+    columns.'''
+    keep_cols = []
+    for category, value in metadata.iteritems():
+        if value['colname']:
+            keep_cols.append(value['colname'])
+    keep_cols.append('geometry')
 
-    :param streets: GeoDataFrame of Seattle's streets in SDOT's spec
-    :type streets: geopandas.GeoDataFrame
-    :param sidewalks: GeoDataFrame of Seattle's sidewalks in SDOT's spec
-    :type sidewalks: geopandas.GeoDataFrame
+    df = df[keep_cols]
+
+    return df
+
+
+# Translate metadata colnames + values into standard schema
+def _standardize_schema(df, metadata):
+    '''Replaces values in df table with those from the metadata category
+    maps. e.g the original dataset may encode a column to have highway=0, but
+    we want a standard value (highway) for later processing.
+
+    It also renames the columns of the dataframe to match those described in
+    the metadata.
 
     '''
+    df = df.copy()
+
+    # Rename the columns using the metadata object
+    rename = {v['colname']: k for k, v in metadata.iteritems()}
+    df.rename(columns=rename, inplace=True)
+
+    # Replace all values in non-geometry columns
+    ignore = ['pkey', 'streets_pkey']
+    for category, data in metadata.iteritems():
+        if category not in ignore and 'categorymap' in data:
+            mask_values = []
+            df[category] = df[category].astype(str)
+            # Save masks with values first to avoid duplicate replacement
+            for key, value in data['categorymap'].iteritems():
+                mask_values.append((df[category] == str(key), value))
+            # Apply masks
+            for mask, value in mask_values:
+                df.loc[mask, category] = value
+        if category == 'pkey' and 'nullvalue' in data:
+            df = df.loc[df['pkey'].astype(str) != str(data['nullvalue'])]
+
+    return df
+
+
+def standardize_df(df, metadata):
+    # FIXME: Need to add validator to inputs (restrict allowed metadata keys
+    #        and values)
+
+    crs = df.crs
     #
-    # Standardize the sidewalks table
+    # Metadata-based filtering/value substitution
     #
 
-    df_sw = sidewalks.copy()
+    # Filter columns to those described in the metadata
+    df = _filter_columns(df, metadata)
 
-    # Separate LineStrings from everything else
-    linestrings = df_sw[df_sw.geometry.type == 'LineString']
+    # Rename the columns and their values using the metadata
+    df = _standardize_schema(df, metadata)
 
-    # Expand MultiLineStrings into new rows
-    newlines = []
-    for i, row in df_sw[df_sw.geometry.type == 'MultiLineString'].iterrows():
-        for geom in row.geometry:
-            # Keep metadata
-            newlines.append(row.copy())
-            newlines[-1].geometry = geom
-    multilinestrings = gpd.GeoDataFrame(newlines)
+    # Drop rows with empty geometries
+    df = df.dropna(axis=0, subset=['geometry'])
 
-    # Combine original LineStrings with those from MultiLineStrings
-    df_sw = pd.concat([linestrings, multilinestrings])
-    df_sw.reset_index(drop=True, inplace=True)
+    # Goal is to take street lines, draw sidewalks with offset
+    # Every street geometry may have one or more sidewalks assigned to it
+    # Upon exploding the street geometries, there will be multiple street lines
+    # that refer to the same sidewalk geometry
 
-    # Trim columns
-    df_sw = df_sw[['SEGKEY', 'CURBRAMPHI', 'CURBRAMPLO', 'geometry']]
+    df = dedupe_geometries(df)
 
-    # Extract index from streets table, replace SEGKEY value
-    def index_from_compkey(compkey):
-        streets_w_compkey = streets[streets['COMPKEY'] == compkey]
-        if streets_w_compkey.empty:
-            return -1
-        else:
-            return streets_w_compkey.index[0]
+    # Drop nulls - nulls indicate field values outside of those in the
+    # whitelist
+    df = df.dropna()
 
-    df_sw['index_st'] = list(df_sw['SEGKEY'].apply(index_from_compkey))
+    df.crs = crs
 
-    # Remove sidewalks pointing to nonexistent streets
-    df_sw = df_sw[df_sw['index_st'] != -1]
-    df_sw.drop('SEGKEY', 1, inplace=True)
+    return df
 
-    # Rename columns to standardized scheme
-    df_sw.rename(columns={'CURBRAMPHI': 'ramp_end',
-                          'CURBRAMPLO': 'ramp_start'},
-                 inplace=True)
 
+# def explode_multilinestrings(df):
+#     # Expand MultiLineStrings into separate rows of LineStrings
+#     linestrings = df.loc[df.geometry.type == 'LineString']
+#
+#     newlines = []
+#     for i, row in df.loc[df.geometry.type == 'MultiLineString'].iterrows():
+#         for geom in row.geometry:
+#             # Keep metadata
+#             newlines.append(row.copy())
+#             newlines[-1].geometry = geom
+#     multilinestrings = gpd.GeoDataFrame(newlines)
+#
+#     # Create fresh index
+#     df.reset_index(drop=True, inplace=True)
+#
+#     df = gpd.GeoDataFrame(pd.concat([linestrings, multilinestrings]))
+#
+#     return df
+
+
+def dedupe_geometries(df):
+    # Dedupe lines WKT (TODO: replace with line similarity)
+    df['wkt'] = df.geometry.apply(lambda r: r.wkt)
+    df = df.drop_duplicates('wkt')
+    df = df.drop('wkt', 1)
+
+    return df
+
+
+def whitelist_filter(df, whitelists):
+    # Filter via whitelists (dictionaries with key = colname, values = allowed
+    # values
+    for colname, whitelist in whitelists.iteritems():
+        if colname in df.columns:
+            df = df.loc[df[colname].isin(whitelist)]
+
+    return df
+
+
+def assign_st_to_sw(df_sw, df_st):
+    '''Given a street and sidewalk datasets where the sidewalks dataset has a
+    foreign key for the street to which it belongs, associate the two and trim
+    drop sidewalks that have no street.
+
+    :param df_st: GeoDataFrame of Seattle's df_st in SDOT's spec
+    :type df_st: geopandas.GeoDataFrame
+    :param df_sw: GeoDataFrame of Seattle's df_sw in SDOT's spec
+    :type df_sw: geopandas.GeoDataFrame
+
+    '''
     # FIXME: Remove sidewalks that are literally on top of street lines
-
-    # Dedupe sidewalk lines using WKT (TODO: replace with line similarity)
-    df_sw['wkt'] = df_sw.geometry.apply(lambda row: row.wkt)
-    df_sw.drop_duplicates(['wkt'], inplace=True)
-    df_sw.drop('wkt', 1, inplace=True)
-
-    #
-    # Standardize the streets table
-    #
-    df_st = streets.copy()
-
-    # Remove 'streets' that we should ignore for cleaning
-    # ST_CODE 22 seems to be applied to trails
-    df_st = df_st[df_st['ST_CODE'] != 22]
-    # ST_CODE 4 seems to be applied to highways
-    df_st = df_st[df_st['ST_CODE'] != 4]
-
-    df_st = df_st[['geometry']]
-    df_st.crs = streets.crs
-
-    # Dedupe street lines using WKT (TODO: replace with line similarity)
-    df_st['wkt'] = df_st.geometry.apply(lambda row: row.wkt)
-    df_st.drop_duplicates(['wkt'], inplace=True)
-    df_st.drop('wkt', 1, inplace=True)
+    crs = df_sw.crs
 
     # Save index as column (survives read/write to filesystem)
-    df_st['index'] = list(df_st.index)
+    # df_st['index'] = list(df_st.index)
 
-    # Remove sidewalks that no longer have streets
-    df_sw = df_sw[df_sw['index_st'].apply(lambda r: r in df_st.index)]
+    # Remove sidewalks that don't refer to a specific street
+    df_sw = df_sw.loc[df_sw['streets_pkey'].isin(df_st['pkey'])]
 
     #
-    # Restore the CRS for both tables
+    # Restore the CRS
     #
-    df_sw.crs = sidewalks.crs
-    df_st.crs = sidewalks.crs
+    df_sw.crs = crs
 
-    return df_st, df_sw
+    return df_sw

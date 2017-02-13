@@ -11,7 +11,7 @@ import shutil
 import zipfile
 from StringIO import StringIO
 from . import clean as sidewalk_clean
-from . import standardize as sidewalk_std
+from .standardize import standardize_df, assign_st_to_sw, whitelist_filter
 
 
 BASE = os.path.abspath('./cities')
@@ -171,15 +171,36 @@ def dem(city):
                         g.write(f.read())
 
 
-@cli.command()
-@click.argument('city')
+# @cli.command()
+# @click.argument('city')
 def standardize(city):
     click.echo('Standardizing data schema')
 
+    click.echo('    Loading metadata...')
     with open(os.path.join(BASE, city, 'sources.json')) as f:
         sources = json.load(f)
         layers = sources.keys()
 
+        # Require streets input
+        if 'streets' not in sources:
+            raise ValueError('streets data source required')
+        elif 'metadata' not in sources['streets']:
+            raise ValueError('streets data source must have metadata')
+        st_metadata = sources['streets']['metadata']
+
+        # Require sidewalks input
+        if 'sidewalks' not in sources:
+            raise ValueError('sidewalks data source required')
+        elif 'metadata' not in sources['sidewalks']:
+            raise ValueError('sidewalks data source must have metadata')
+        sw_metadata = sources['sidewalks']['metadata']
+
+        # Require a foreign key between sidewalks and streets
+        if ('pkey' not in st_metadata) or ('streets_pkey' not in sw_metadata):
+            raise Exception('Sidewalks must have foreign key to streets'
+                            'dataset and streets must have primary key')
+
+    click.echo('    Reading input data...')
     inpath = os.path.join(BASE, city, 'original')
     outpath = os.path.join(BASE, city, 'standardized')
     if not os.path.exists(outpath):
@@ -190,15 +211,41 @@ def standardize(city):
         path = os.path.join(inpath, '{}.shp'.format(layer))
         frames[layer] = gpd.read_file(path)
 
+    click.echo('    Running standardization scripts...')
     # Standardize GeoDataFrame columns
-    std = sidewalk_std.standardize(frames['streets'], frames['sidewalks'])
-    frames['streets'], frames['sidewalks'] = std
+    frames['streets'] = standardize_df(frames['streets'], st_metadata)
+    frames['sidewalks'] = standardize_df(frames['sidewalks'], sw_metadata)
+
+    # Require that streets to simple LineString geometries to simplify process
+    # of assigning sidewalks to streets
+    if (frames['streets'].geometry.type != 'LineString').sum():
+        raise ValueError('streets dataset must be use simple LineStrings')
+
+    # Filter streets to just those that matter for sidewalks (excludes, e.g.,
+    # rail and highways).
+
+    # Used to include 'motorway_link', but unfortunately the 'level' (z-level)
+    # is not correctly logged, so it's impossible to know whether a given
+    # highway entrance/exit segment is grade-separated. Erring on the side of
+    # connectivity for now.
+    st_whitelists = {
+        'waytype': ['street']
+    }
+    frames['streets'] = whitelist_filter(frames['streets'], st_whitelists)
+
+    # Assign street foreign key to sidewalks, remove sidewalks that don't refer
+    # to a street
+    click.echo('    Assigning sidewalks to streets...')
+    frames['sidewalks'] = assign_st_to_sw(frames['sidewalks'],
+                                          frames['streets'])
 
     for layer in layers:
         # Project to SRID 26910 (NAD83 for WA in meters)
         # FIXME: this shouldn't be hardcoded, should be determined from extent
         # May also need to ask for projection from user, if dataset doesn't
         # report it (or reports it incorrectly)
+        # FIXME: Use non-NAD83?
+        click.echo('    Reprojecting to srid 26910...')
         srid = '26910'
         frame = frames[layer]
 
@@ -211,40 +258,47 @@ def standardize(city):
         # Reproject
         frame = frame.to_crs({'init': 'epsg:{}'.format(srid)})
 
-        # Need to overwrite files, but Fiona (used by GeoPandas) can't do that
-        # sometimes - remove first
-        for filepath in os.listdir(outpath):
-            if filepath.split(os.extsep, 1)[0] == layer:
-                os.remove(os.path.join(outpath, filepath))
+        frames[layer] = frame
 
-        # Write back to the same files
-        frame.to_file(os.path.join(outpath, '{}.shp'.format(layer)))
+        # May need to overwrite files, but Fiona (used by GeoPandas) can't do
+        # that sometimes, so remove first
+        # click.echo('    Writing file...')
+        # for filepath in os.listdir(outpath):
+        #     if filepath.split(os.extsep, 1)[0] == layer:
+        #         os.remove(os.path.join(outpath, filepath))
+
+        # # Write back to the same files
+        # # TODO: Make writing to file non-blocking (threads?)
+        # frame.to_file(os.path.join(outpath, '{}.shp'.format(layer)))
+    click.echo('done')
+    return frames
 
 
 @cli.command()
 @click.argument('city')
 def clean(city):
-    inpath = os.path.join(BASE, city, 'standardized')
+    frames = standardize(city)
     outpath = os.path.join(BASE, city, 'clean')
-    if not os.path.exists(outpath):
-        os.mkdir(outpath)
+    # if not os.path.exists(outpath):
+    #     os.mkdir(outpath)
 
-    streets = gpd.read_file(os.path.join(inpath, 'streets.shp'))
-    sidewalks = gpd.read_file(os.path.join(inpath, 'sidewalks.shp'))
+    streets = frames['streets']
+    sidewalks = frames['sidewalks']
 
     click.echo('Assigning sidewalk side to streets...')
-    sidewalks = sidewalk_clean.sw_tag_streets(sidewalks, streets)
+    streets = sidewalk_clean.sw_tag_streets(sidewalks, streets)
 
     click.echo('Drawing sidewalks...')
-    sidewalks = sidewalk_clean.redraw_sidewalks(sidewalks, streets)
+    sidewalks = sidewalk_clean.redraw_sidewalks(streets)
 
-    click.echo('Cleaning with street buffers...')
+    # click.echo('Cleaning with street buffers...')
     sidewalks, buffers = sidewalk_clean.buffer_clean(sidewalks, streets)
 
-    click.echo('Sanitizing sidewalks...')
+    # click.echo('Sanitizing sidewalks...')
     sidewalks = sidewalk_clean.sanitize(sidewalks)
 
     click.echo('Snapping sidewalk ends...')
+    # This step is slow - profile it!
     sidewalks = sidewalk_clean.snap(sidewalks, streets)
 
     click.echo('Writing to file...')
@@ -253,6 +307,7 @@ def clean(city):
 
     # FIXME: curbramps should go through its own standardization/cleanup
     # workflow
+    inpath = os.path.join(BASE, city, 'original')
     for path in os.listdir(inpath):
         filename = os.path.basename(path)
         if path.split(os.extsep, 1)[0] == 'curbramps':
