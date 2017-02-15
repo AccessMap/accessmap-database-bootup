@@ -9,7 +9,7 @@ Using this repository
 
 This repository contains a command-line tool, `data_manager`, for fetching and
 cleaning the data, and two bash scripts for loading that data into the database
-and running final cleaning steps (`load.sh` and `final_cleanup.sh`,
+and running final cleaning steps (`load.sh` and `finalize.sh`,
 respectively).
 
 These scripts can be run directly on a host computer that has the right
@@ -47,7 +47,7 @@ appropriate 'build' directory.
 `sh ./load.sh seattle postgres://user:password@host:port/database`, where the
 database URI has the appropriate variables fill in for your database.
 
-`sh ./final_cleanup.sh seattle postgres://user:password@host:port/database`
+`sh ./finalize.sh seattle postgres://user:password@host:port/database`
 
 There you go! An exact copy of AccessMap's database, ready for routing.
 

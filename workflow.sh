@@ -17,4 +17,4 @@ docker build --tag dm . && docker run -v $(pwd):/sourcedata dm all seattle
 docker run -it --link accessmapdb -v $(pwd):/wd -w /wd starefossen/pgrouting:9.4-2.1-2.1 sh ./load.sh seattle postgres://postgres:test@accessmapdb:5432/postgres
 
 # Finish up cleaning + do pgRouting graph prep
-docker run -it --link accessmapdb -v $(pwd):/wd -w /wd starefossen/pgrouting:9.4-2.1-2.1 sh ./final_cleanup.sh seattle postgres://postgres:test@accessmapdb:5432/postgres
+docker run -it --link accessmapdb -v $(pwd):/wd -w /wd starefossen/pgrouting:9.4-2.1-2.1 sh ./finalize.sh seattle postgres://postgres:test@accessmapdb:5432/postgres
