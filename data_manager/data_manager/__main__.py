@@ -11,6 +11,7 @@ import shutil
 import zipfile
 from StringIO import StringIO
 from . import clean as sidewalk_clean
+from . import make_crossings
 from .standardize import standardize_df, assign_st_to_sw, whitelist_filter
 
 
@@ -301,18 +302,25 @@ def clean(city):
     # This step is slow - profile it!
     sidewalks = sidewalk_clean.snap(sidewalks, streets)
 
+    # TODO: move this to separate function
+    click.echo('Generating crossings...')
+    crossings = make_crossings.make_graph(sidewalks, streets)
+    crossings.to_file(os.path.join(outpath, 'crossings.shp'))
+
     click.echo('Writing to file...')
     streets.to_file(os.path.join(outpath, 'streets.shp'))
     sidewalks.to_file(os.path.join(outpath, 'sidewalks.shp'))
+    if 'curbramps' in frames:
+        frames['curbramps'].to_file(os.path.join(outpath, 'curbramps.shp'))
 
     # FIXME: curbramps should go through its own standardization/cleanup
     # workflow
-    inpath = os.path.join(BASE, city, 'original')
-    for path in os.listdir(inpath):
-        filename = os.path.basename(path)
-        if path.split(os.extsep, 1)[0] == 'curbramps':
-            shutil.copy2(os.path.join(inpath, path),
-                         os.path.join(BASE, city, 'clean', filename))
+    # inpath = os.path.join(BASE, city, 'original')
+    # for path in os.listdir(inpath):
+    #     filename = os.path.basename(path)
+    #     if path.split(os.extsep, 1)[0] == 'curbramps':
+    #         shutil.copy2(os.path.join(inpath, path),
+    #                      os.path.join(BASE, city, 'clean', filename))
 
 
 @cli.command()
@@ -321,7 +329,6 @@ def clean(city):
 def all(ctx, city):
     ctx.forward(fetch)
     ctx.forward(dem)
-    ctx.forward(standardize)
     ctx.forward(clean)
 
 

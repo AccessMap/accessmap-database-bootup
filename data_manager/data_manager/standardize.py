@@ -78,6 +78,12 @@ def standardize_df(df, metadata):
     # whitelist
     df = df.dropna()
 
+    # The primary key ('pkey') may not be unique (looking at you, SDOT), so
+    # let's generate a truly unique key ('id'). It will not necessarily be
+    # sequential/complete due to subsequent filtering.
+    df.reset_index(drop=True, inplace=True)
+    df['id'] = df.index
+
     df.crs = crs
 
     return df

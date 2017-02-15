@@ -13,7 +13,7 @@ CREATE TABLE routing AS
                                1 AS target
                    FROM sidewalks
               UNION ALL
-                 SELECT id AS o_id,
+                 SELECT gid AS o_id,
                               geom,
                               grade,
                               TRUE AS isCcossing,

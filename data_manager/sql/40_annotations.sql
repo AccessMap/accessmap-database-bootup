@@ -29,7 +29,7 @@ DELETE FROM crossings
 -- spatial indices on these, and then look up the raster data
 
 CREATE TEMPORARY TABLE sidewalk_endpoints AS
-                SELECT s.gid AS id,
+                SELECT s.gid,
                        ST_Transform(ST_StartPoint(s.geom), n.srid) AS startpoint,
                        ST_Transform(ST_EndPoint(s.geom), n.srid) AS endpoint
                   FROM sidewalks s,
@@ -38,7 +38,7 @@ CREATE TEMPORARY TABLE sidewalk_endpoints AS
                          LIMIT 1) n;
 
 CREATE TEMPORARY TABLE crossing_endpoints AS
-                SELECT c.id,
+                SELECT c.gid,
                        ST_Transform(ST_StartPoint(c.geom), n.srid) AS startpoint,
                        ST_Transform(ST_EndPoint(c.geom), n.srid) AS endpoint
                   FROM crossings c,
@@ -51,28 +51,28 @@ UPDATE sidewalks s
   FROM dem.n48w123 n,
        sidewalk_endpoints e
  WHERE ST_Intersects(n.rast, e.startpoint)
-   AND s.gid = e.id;
+   AND s.gid = e.gid;
 
 UPDATE sidewalks s
    SET ele_end = ST_Value(n.rast,  e.endpoint)
   FROM dem.n48w123 n,
        sidewalk_endpoints e
  WHERE ST_Intersects(n.rast, e.endpoint)
-   AND s.gid = e.id;
+   AND s.gid = e.gid;
 
-UPDATE crossings s
+UPDATE crossings c
    SET ele_start = ST_Value(n.rast,  e.startpoint)
   FROM dem.n48w123 n,
        crossing_endpoints e
  WHERE ST_Intersects(n.rast, e.startpoint)
-   AND s.id = e.id;
+   AND c.gid = e.gid;
 
-UPDATE crossings s
+UPDATE crossings c
    SET ele_end = ST_Value(n.rast,  e.endpoint)
   FROM dem.n48w123 n,
        crossing_endpoints e
  WHERE ST_Intersects(n.rast, e.endpoint)
-   AND s.id = e.id;
+   AND c.gid = e.gid;
 
 UPDATE sidewalks
    SET grade = (ele_end - ele_start) / ST_Length(geom);

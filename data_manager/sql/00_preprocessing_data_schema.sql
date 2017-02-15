@@ -14,6 +14,10 @@ CREATE INDEX sidewalks_index
           ON sidewalks
        USING gist(geom);
 
+CREATE INDEX crossings_index
+          ON crossings
+       USING gist(geom);
+
 -- ALTER TABLE curbramps
 -- ALTER COLUMN geom TYPE geometry(POINT, 26910)
 --        USING ST_Force2D(geom);

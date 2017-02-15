@@ -1,11 +1,10 @@
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-from shapely import geometry
+from shapely import geometry, ops
 
 
 BUFFER_MIN = 6
-BUFFER_MIN2 = BUFFER_MIN**2
 
 
 def side_of_line(point, linestring):
@@ -58,6 +57,10 @@ def sw_tag_streets(df_sw, df_st):
 
     for st_index, street in df_st.iterrows():
         # Find the sidewalks associated with this street
+        # Note: 'pkey' in the streets DataFrame is not necessarily unique, e.g.
+        # for SDOT, the key 9481 is used twice (one segment is public access,
+        # the other is not, but they keep the same 'COMPKEY').
+
         sidewalks = df_sw.loc[df_sw['streets_pkey'] == street['pkey']]
 
         # Assign every associated sidewalk to the left or right side and
@@ -158,6 +161,7 @@ def redraw_sidewalks(streets):
     streets_pkeys = []
     sides = []
     layers = []
+    st_ids = []
 
     # FIXME: it is almost definitely faster to vector-ize this for loop
     # (and more readable)
@@ -169,15 +173,18 @@ def redraw_sidewalks(streets):
             sides.append('left')
             streets_pkeys.append(row['pkey'])
             layers.append(row['layer'])
+            st_ids.append(row['id'])
         if right:
             sw_geometries.append(row.geometry.parallel_offset(right, 'right'))
             sides.append('right')
             streets_pkeys.append(row['pkey'])
             layers.append(row['layer'])
+            st_ids.append(row['id'])
 
     sidewalks = gpd.GeoDataFrame({
         'geometry': sw_geometries,
         'streets_pkey': streets_pkeys,
+        'st_id': st_ids,
         'side': sides,
         'layer': layers
     })
@@ -228,30 +235,26 @@ def buffer_clean(sidewalks, streets):
     # Trim new sidewalk lines by street buffers
     #
 
-    def trim_by_buffer(sidewalk, buffer_df):
-        linestring = sidewalk.geometry
-        ixns = buffer_df.sindex.intersection(linestring.bounds, objects=True)
-        to_subtract = buffer_df.loc[[x.object for x in ixns]]
+    def merge_buffers(sidewalk, buffer_df):
+        geom = sidewalk.geometry
+        ixns = buffer_df.sindex.intersection(geom.bounds, objects=True)
+        buffs = buffer_df.loc[[x.object for x in ixns]]
+        # Only merge buffers in same layer as the sidewalk
+        buffs = buffs.loc[buffs['layer'] == sidewalk['layer']]
+        return ops.cascaded_union(buffs.geometry)
 
-        # If 'layer' column in buffer and sidewalk, filter out buffers not on
-        # the same vertical layer as the sidewalk in question
-        if 'layer' in sidewalk.index and 'layer' in buffer_df.columns:
-            same_layer = to_subtract['layer'] == sidewalk['layer']
-            to_subtract = to_subtract.loc[same_layer]
+    sidewalks['buffer'] = sidewalks.apply(merge_buffers, axis=1,
+                                          args=[buffers])
 
-        # Subtract off all buffers (cascade method?)
-        for i, buffer in to_subtract.geometry.iteritems():
-            linestring = linestring.difference(buffer)
+    def trim_by_buffer(row):
+        return row.geometry.difference(row['buffer'])
 
-        return linestring
-
-    def tbf_apply(row):
-        return trim_by_buffer(row, buffers)
-
-    sidewalks['geometry'] = sidewalks.apply(tbf_apply, axis=1)
+    sidewalks['geometry'] = sidewalks.apply(trim_by_buffer, axis=1)
+    sidewalks.drop('buffer', axis=1, inplace=True)
 
     # Remove empty geometries
     sidewalks = sidewalks[~sidewalks.geometry.is_empty]
+
     sidewalks.reset_index(drop=True, inplace=True)
 
     return sidewalks, buffers
@@ -285,6 +288,10 @@ def sanitize(sidewalks):
     split = gpd.GeoDataFrame(split)
 
     sidewalks = pd.concat([ls, split])
+    # Remove everything remaining that is very short
+    small_len = 3
+    sidewalks = sidewalks.loc[sidewalks.geometry.length > small_len]
+
     sidewalks.reset_index(drop=True, inplace=True)
     sidewalks.crs = crs
 
@@ -312,6 +319,7 @@ def snap(sidewalks, streets, threshold=14):
     ends = gpd.GeoDataFrame({
         'sw_index': 2 * list(sidewalks.index),
         'streets_pkey': 2 * list(sidewalks['streets_pkey']),
+        'st_id': 2 * list(sidewalks['st_id']),
         'side': 2 * list(sidewalks['side']),
         'endtype': n * ['start'] + n * ['end'],
         'geometry': pd.concat([starts, ends])
@@ -361,79 +369,99 @@ def snap(sidewalks, streets, threshold=14):
     ends['touched'] = False
     ends['near_id'] = pd.np.nan
 
-    for idx, row in ends.iterrows():
-        if row['touched']:
-            # Skip if this row has already been snapped (e.g. it was located
-            # as the 'other' end and snapped in a previous query)
-            continue
+    def valid_snap(row1, row2):
+        if row1['touched'] or row2['touched']:
+            return False
 
-        xy = row.geometry.coords[0]
-        # Check nearest 2 points only
-        sindex_near = ends.sindex.nearest(xy, 3, objects=True)
-        candidates = [x.object for x in sindex_near][1:]
+        same_side = row1['side'] == row2['side']
+        same_street = row1['st_id'] == row2['st_id']
+        if same_street and not same_side:
+            # If on same street but opposite side (e.g. dead end), keep
+            # looking (skip to the next one)
+            return False
 
-        for candidate in candidates:
-            other = ends.loc[candidate]
+        # Line between the endpoints
+        between = geometry.LineString([row1.geometry, row2.geometry])
 
-            other_xy = other.geometry.coords[0]
-            sindex_other = ends.sindex.nearest(other_xy, 2, objects=True)
-            if [x.object for x in sindex_other][1] != idx:
-                # There's another, closer endpoint to the other
-                # endpoint - we should skip the current row altogether
-                # TODO: check whether the bbox-ness of the spatial index could
-                # be messing up this check
-                break
+        # If it's above distance threshold, so are all the others. Skip
+        # all of them
+        if between.length > threshold:
+            return False
 
-            same_side = row['side'] == other['side']
-            same_street = row['streets_pkey'] == other['streets_pkey']
-            if same_street and not same_side:
-                # If on same street but opposite side (e.g. dead end), keep
-                # looking (skip to the next one)
+        # Check if it intersects a street
+        ixn = streets.sindex.intersection(between.bounds, objects=True)
+        ixn = [x.object for x in ixn]
+        if ixn:
+            # Bounding boxes intersected - now do real test
+            for st_id in ixn:
+                if streets.loc[st_id].geometry.intersects(between):
+                    return False
+        return True
+
+    # FIXME: should probably do while-loop style, keep checking non-touched
+    # ends (after fixing geometries) until none can be paired. This will fix
+    # several intersections, including the dreaded University Bridge area.
+    # FIXME: Sometimes the closest end still isn't right - very short segments
+    # can end up having the 'far' edge be closest due to overshoots. These
+    # geometries tend to intersect, so this could be used - check intersection
+    # first and see if the intersection point is closer than the 'nearest' end.
+    # If so, trim both to intersection point.
+    check = ends.copy()
+    while True:
+        nrows = check.shape[0]
+        for idx in check.index:
+            row = check.loc[idx]
+            if row['touched']:
+                # Skip if this row has already been snapped (e.g. it was
+                # located as the 'other' end and snapped in a previous query)
                 continue
 
-            # Line between the endpoints
-            between = geometry.LineString([row.geometry, other.geometry])
+            xy = row.geometry.coords[0]
+            # Check nearest 2 points only
+            sindex_near = check.sindex.nearest(xy, 3, objects=True)
+            candidates = [x.object for x in sindex_near][1:]
 
-            # If it's above distance threshold, so are all the others. Skip
-            # all of them
-            if between.length > threshold:
-                break
+            for candidate in candidates:
+                other = check.loc[candidate]
 
-            # Check if it intersects a street
-            ixn = streets.sindex.intersection(between.bounds, objects=True)
-            ixn = [x.object for x in ixn]
-            if ixn:
-                # Bounding boxes intersected - now do real test
-                intersects = False
-                for st_id in ixn:
-                    if streets.loc[st_id].geometry.intersects(between):
-                        intersects = True
-                        break
-                if intersects:
-                    # Connecting them would likely interrupt a street - skip
-                    # TODO: should probably do a *real* check for intersection
-                    # after endpoints would be moved
+                other_xy = other.geometry.coords[0]
+                sindex_other = check.sindex.nearest(other_xy, 2, objects=True)
+                other_closest = [x.object for x in sindex_other][1]
+                if other_closest != idx:
+                    # The other end is closer to another end. It will be found
+                    # when its turn comes up
+                    if valid_snap(other, check.loc[other_closest]):
+                        continue
+
+                if not valid_snap(row, other):
                     continue
 
-            # If this point has been reached, the candidate has met all of the
-            # criteria - fix the geometry and stop searching
-            # FIXME: For-loop?
-            new = avg_ends(row.geometry.coords[0], other.geometry.coords[0])
+                c1 = row.geometry.coords[0]
+                c2 = other.geometry.coords[0]
+                new = avg_ends(c1, c2)
 
-            # Update both sidewalks
-            for _row in [row, other]:
-                swindex = _row['sw_index']
-                sw_coords = list(sidewalks.loc[swindex, 'geometry'].coords)
+                # Update both sidewalks
+                for _row in [row, other]:
+                    swindex = _row['sw_index']
+                    sw_coords = list(sidewalks.loc[swindex, 'geometry'].coords)
 
-                if _row['endtype'] == 'start':
-                    sw_coords[0] = new
-                else:
-                    sw_coords[-1] = new
+                    if _row['endtype'] == 'start':
+                        sw_coords[0] = new
+                    else:
+                        sw_coords[-1] = new
 
-                geom = geometry.LineString(sw_coords)
+                    geom = geometry.LineString(sw_coords)
 
-                sidewalks.loc[_row['sw_index'], 'geometry'] = geom
+                    sidewalks.loc[_row['sw_index'], 'geometry'] = geom
+                    ends.loc[row.name, 'touched'] = True
+                    check.loc[row.name, 'touched'] = True
+                    ends.loc[other.name, 'touched'] = True
+                    check.loc[other.name, 'touched'] = True
 
+                break
+
+        check = check.loc[~check['touched']]
+        if check.shape[0] == nrows:
             break
 
     return sidewalks
