@@ -43,6 +43,7 @@ def make_graph(sidewalks, streets):
         'st_id': 2 * list(sidewalks['st_id']),
         'side': 2 * list(sidewalks['side']),
         'endtype': n * ['start'] + n * ['end'],
+        'layer': 2 * list(sidewalks['layer']),
         'geometry': pd.concat([starts, ends])
     })
 
@@ -183,11 +184,51 @@ def make_graph(sidewalks, streets):
                     to = near_idx
                 else:
                     to = -1
+                # z-level logic: 100% consensus. If there is any ambiguity,
+                # z-level is ignored ('layer' set to nan) and no streets
+                # intersections will be removed later in the process. If a
+                # z-level can be determined unambiguously, it will be used
+                # later (e.g. a bridge will be ignored).
+
+                # Corner z-level ('layer')
+                c1layer = sidewalks.loc[row['sw1_index'], 'layer']
+                if not pd.isnull(row['sw2_index']):
+                    c2layer = sidewalks.loc[int(row['sw2_index']), 'layer']
+                    if c1layer == c2layer:
+                        clayer = c1layer
+                    else:
+                        clayer = pd.np.nan
+                else:
+                    clayer = pd.np.nan
+
+                # Opposite side z-level
+                if corner_snapped:
+                    # Need to evaluate this corner's sidewalks the same way
+                    oc1layer = sidewalks.loc[nearest['sw1_index'], 'layer']
+                    if not pd.isnull(nearest['sw2_index']):
+                        oc2layer = sidewalks.loc[int(nearest['sw2_index']),
+                                                 'layer']
+                        if oc1layer == oc2layer:
+                            other_layer = oc1layer
+                        else:
+                            other_layer = pd.np.nan
+                    else:
+                        other_layer = oc1layer
+                else:
+                    # Just get the layer for the one sidewalk
+                    other_layer = other_sw['layer']
+
+                if clayer == other_layer:
+                    layer = clayer
+                else:
+                    layer = pd.np.nan
+
                 candidates.append({
                     'geometry': candidate,
                     'from': row.name,
                     'to': to,
-                    'sw_idx': other_sw.name
+                    'sw_idx': other_sw.name,
+                    'layer': layer
                 })
                 n += 1
             else:
@@ -197,6 +238,8 @@ def make_graph(sidewalks, streets):
 
     # Remove candidates that intersect more than one street or do not intersect
     # a street at all
+    # FIXME: Need to insert layer awareness here - z-level is currently ignored
+    #        so bridges ave impacting crossings.
     def filter_single_st(row):
         query = streets.sindex.intersection(row.geometry.bounds, objects=True)
         st_idxs = [x.object for x in query]
@@ -209,7 +252,10 @@ def make_graph(sidewalks, streets):
             # Not efficient but also not buggy
             for st_idx in st_idxs:
                 street = streets.loc[st_idx]
-                intersecting.append(row.geometry.intersects(street.geometry))
+                if pd.isnull(row['layer']) or street['layer'] == row['layer']:
+                    intersects = row.geometry.intersects(street.geometry)
+                    intersecting.append(intersects)
+
             if sum(intersecting) == 1:
                 return st_idxs[intersecting.index(True)]
             else:
