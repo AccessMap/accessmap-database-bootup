@@ -7,9 +7,10 @@ import click
 import json
 import geopandas as gpd
 import os
-import shutil
 import zipfile
 from StringIO import StringIO
+from .annotate import annotate_line_from_points
+from . import fetch as fetcher
 from . import clean as sidewalk_clean
 from . import make_crossings
 from .standardize import standardize_df, assign_st_to_sw, whitelist_filter
@@ -26,7 +27,6 @@ def cli():
 @cli.command()
 @click.argument('city')
 def fetch(city):
-    import requests
 
     with open(os.path.join(BASE, city, 'sources.json')) as f:
         sources = json.load(f)
@@ -36,28 +36,11 @@ def fetch(city):
         os.mkdir(outpath)
 
     # Iterate over each layer, download + unzip to standard naming scheme
-    layers = sources.keys()
-    for layer in layers:
-        click.echo('Downloading {}...'.format(layer))
-        click.echo(sources[layer]['url'])
-        # Download based on source.json layer url
-        response = requests.get(sources[layer]['url'])
-        zipper = zipfile.ZipFile(StringIO(response.content), 'r')
-        found_any = False
-        # Filter by files matching source.json layer 'shapefile' key
-        for member in zipper.namelist():
-            path, ext = member.split(os.extsep, 1)
-            if sources[layer]['shapefile'] in path:
-                # Extract to standard naming scheme, e.g. layer.shp
-                found_any = True
-                f = zipper.open(member)
-                write_path = os.path.join(outpath, '{}.{}'.format(layer, ext))
-
-                with open(write_path, 'w') as g:
-                    g.write(f.read())
-
-        if not found_any:
-            raise Exception('Could not find matching files in zip archive.')
+    for name, layer in sources['layers'].iteritems():
+        click.echo('Downloading {}...'.format(name))
+        url = layer['url']
+        click.echo(url)
+        fetcher.fetch_shapefile(url, layer['shapefile'], outpath, name)
 
 
 @cli.command()
@@ -75,7 +58,7 @@ def dem(city):
     data_url = ('https://prd-tnm.s3.amazonaws.com/StagedProducts/Elevation/13/'
                 'ArcGrid/{ns}{lat}{ew}{lon}.zip')
     # Figure out which files are needed - get extent of shapefiles
-    layers = sources.keys()
+    layers = sources['layers'].keys()
     inpath = os.path.join(BASE, city, 'original')
     outpath = os.path.join(BASE, city, 'dem')
 
@@ -172,29 +155,29 @@ def dem(city):
                         g.write(f.read())
 
 
-# @cli.command()
-# @click.argument('city')
+@cli.command()
+@click.argument('city')
 def standardize(city):
     click.echo('Standardizing data schema')
 
     click.echo('    Loading metadata...')
     with open(os.path.join(BASE, city, 'sources.json')) as f:
         sources = json.load(f)
-        layers = sources.keys()
+        layers = sources['layers'].keys()
 
         # Require streets input
-        if 'streets' not in sources:
+        if 'streets' not in sources['layers']:
             raise ValueError('streets data source required')
-        elif 'metadata' not in sources['streets']:
+        elif 'metadata' not in sources['layers']['streets']:
             raise ValueError('streets data source must have metadata')
-        st_metadata = sources['streets']['metadata']
+        st_metadata = sources['layers']['streets']['metadata']
 
         # Require sidewalks input
-        if 'sidewalks' not in sources:
+        if 'sidewalks' not in sources['layers']:
             raise ValueError('sidewalks data source required')
-        elif 'metadata' not in sources['sidewalks']:
+        elif 'metadata' not in sources['layers']['sidewalks']:
             raise ValueError('sidewalks data source must have metadata')
-        sw_metadata = sources['sidewalks']['metadata']
+        sw_metadata = sources['layers']['sidewalks']['metadata']
 
         # Require a foreign key between sidewalks and streets
         if ('pkey' not in st_metadata) or ('streets_pkey' not in sw_metadata):
@@ -208,7 +191,7 @@ def standardize(city):
         os.mkdir(outpath)
 
     frames = {}
-    for layer in layers:
+    for layer in sources['layers'].keys():
         path = os.path.join(inpath, '{}.shp'.format(layer))
         frames[layer] = gpd.read_file(path)
 
@@ -325,11 +308,59 @@ def clean(city):
 
 @cli.command()
 @click.argument('city')
+def annotate(city):
+    click.echo('Standardizing data schema')
+
+    click.echo('    Loading metadata...')
+    with open(os.path.join(BASE, city, 'sources.json')) as f:
+        sources = json.load(f)
+
+        inpath = os.path.join(BASE, city, 'clean')
+        frames = {}
+        layers = sources['layers'].keys()
+        for layer in layers:
+            path = os.path.join(inpath, '{}.shp'.format(layer))
+            frames[layer] = gpd.read_file(path)
+        # Also add crossings...
+        frames['crossings'] = gpd.read_file(os.path.join(inpath,
+                                                         'crossings.shp'))
+
+        outpath = os.path.join(BASE, city, 'annotations')
+        real_outpath = os.path.join(BASE, city, 'annotated')
+        annotations = sources.get('annotations')
+        if annotations is not None:
+            click.echo('Annotating...')
+            for name, annotation in annotations.iteritems():
+                # Fetch the annotations
+                click.echo('Downloading {}...'.format(name))
+                url = annotation['url']
+                click.echo(url)
+                fetcher.fetch_shapefile(url, annotation['shapefile'], outpath,
+                                        name)
+
+                # Read the file into a GeoDataFrame
+                path = os.path.join(outpath, '{}.shp'.format(name))
+                gdf = gpd.read_file(path)
+
+                # Reproject
+                gdf = gdf.to_crs({'init': 'epsg:26910'})
+
+                # Apply appropriate functions, overwrite layers in 'clean' dir
+                # FIXME: hard-coded sidewalks here
+                annotate_line_from_points(frames['crossings'], gdf,
+                                          annotation['default_tags'])
+                frames['crossings'].to_file(os.path.join(real_outpath,
+                                                         'crossings.shp'))
+
+
+@cli.command()
+@click.argument('city')
 @click.pass_context
 def all(ctx, city):
     ctx.forward(fetch)
     ctx.forward(dem)
     ctx.forward(clean)
+    ctx.forward(annotate)
 
 
 if __name__ == '__main__':
