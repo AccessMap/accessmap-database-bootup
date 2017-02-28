@@ -1,0 +1,2 @@
+Document/Dockerify installing gdal bindings for Python:
+pip install GDAL==$(gdal-config --version | awk -F'[.]' '{print $1"."$2}')

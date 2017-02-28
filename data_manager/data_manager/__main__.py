@@ -12,8 +12,9 @@ import geopandas as gpd
 from .annotate import annotate_line_from_points
 from . import fetchers
 from . import dems
-from . import clean as sidewalk_clean
-from . import make_crossings
+from . import redraw
+from . import graph
+# from . import make_crossings
 from .standardize import standardize_df, assign_st_to_sw, whitelist_filter
 
 
@@ -190,36 +191,37 @@ def clean(city):
     sidewalks = frames['sidewalks']
 
     click.echo('Assigning sidewalk side to streets...')
-    streets = sidewalk_clean.sw_tag_streets(sidewalks, streets)
+    streets = redraw.sw_tag_streets(sidewalks, streets)
 
-    click.echo('Drawing sidewalks...')
-    sidewalks = sidewalk_clean.redraw_sidewalks(streets)
+    # click.echo('Drawing sidewalks...')
+    # sidewalks = graph.redraw_sidewalks(streets)
+    # sidewalks, buffers = redraw.buffer_clean(sidewalks, streets)
+    # sidewalks = redraw.sanitize(sidewalks)
 
-    # click.echo('Cleaning with street buffers...')
-    sidewalks, buffers = sidewalk_clean.buffer_clean(sidewalks, streets)
-
-    # click.echo('Sanitizing sidewalks...')
-    sidewalks = sidewalk_clean.sanitize(sidewalks)
-
-    click.echo('Snapping sidewalk ends...')
+    # click.echo('Snapping sidewalk ends...')
     # This step is slow - profile it!
-    sidewalks = sidewalk_clean.snap(sidewalks, streets)
+    # import cProfile
+    # cProfile.runctx('sidewalk_clean.snap(sidewalks, streets)', globals(),
+    #                 locals(),
+    #                 sort='cumulative')
+    # sidewalks = redraw.snap(sidewalks, streets)
 
-    # TODO: move this to separate function
-    click.echo('Generating crossings...')
-    crossings = make_crossings.make_graph(sidewalks, streets)
-    if crossings.empty:
-        raise Exception('Generated no crossings')
-    else:
-        crossingspath = os.path.join(outpath, 'crossings.shp')
-        if os.path.exists(crossingspath):
-            os.remove(crossingspath)
-        crossings.to_file(crossingspath)
+    # # TODO: move this to separate function
+    # click.echo('Generating crossings...')
+    # crossings = make_crossings.make_graph(sidewalks, streets)
+    # if crossings.empty:
+    #     raise Exception('Generated no crossings')
+    # else:
+    #     crossingspath = os.path.join(outpath, 'crossings.shp')
+    #     if os.path.exists(crossingspath):
+    #         os.remove(crossingspath)
+    #     crossings.to_file(crossingspath)
 
-    click.echo('Writing to file...')
+    # click.echo('Writing to file...')
+    streets.to_file(os.path.join(outpath, 'streets.shp'))
     sidewalks.to_file(os.path.join(outpath, 'sidewalks.shp'))
-    if 'curbramps' in frames:
-        frames['curbramps'].to_file(os.path.join(outpath, 'curbramps.shp'))
+    # if 'curbramps' in frames:
+    #     frames['curbramps'].to_file(os.path.join(outpath, 'curbramps.shp'))
 
 
 @cli.command()
