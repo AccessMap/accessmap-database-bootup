@@ -313,6 +313,11 @@ def make_graph(sidewalks, streets):
         return sidewalks.loc[idxs].intersects(geom).any()
 
     df = df.loc[list(~df.apply(intersects_sw, axis=1))]
+    # Drop rows with empty geometries
+    df = df.loc[~df.geometry.is_empty]
+    # Drop rows with NAs - these should originate from rows with specifically-
+    # flagged null values in city metadata.
+    df = df.dropna(axis=1)
 
     df.crs = sidewalks.crs
 

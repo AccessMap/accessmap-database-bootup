@@ -3,20 +3,38 @@ pseudo-database in the filesystem, organized as ./cities/<city>/
 
 '''
 
-import click
 import json
-import geopandas as gpd
 import os
-import zipfile
-from StringIO import StringIO
+
+import click
+import geopandas as gpd
+
 from .annotate import annotate_line_from_points
-from . import fetch as fetcher
+from . import fetchers
+from . import dems
 from . import clean as sidewalk_clean
 from . import make_crossings
 from .standardize import standardize_df, assign_st_to_sw, whitelist_filter
 
 
 BASE = os.path.abspath('./cities')
+
+
+def get_metadata(city):
+    with open(os.path.join(BASE, city, 'sources.json')) as f:
+        return json.load(f)
+
+
+def get_data(city, layername, category):
+    path = os.path.join(BASE, city, category, '{}.shp'.format(layername))
+    return gpd.read_file(path)
+
+
+def put_data(gdf, city, layername, category):
+    directory = os.path.join(BASE, city, category)
+    if not os.path.exists(directory):
+        os.mkdir(directory)
+    gdf.to_file(os.path.join(directory, '{}.shp'.format(layername)))
 
 
 @click.group()
@@ -27,136 +45,40 @@ def cli():
 @cli.command()
 @click.argument('city')
 def fetch(city):
-
-    with open(os.path.join(BASE, city, 'sources.json')) as f:
-        sources = json.load(f)
+    # If this command is being called on its own, fetch the data + write to
+    # directory structure under cities/<city>/original/layername.shp
+    metadata = get_metadata(city)
+    layers = fetchers.fetch(metadata)
 
     outpath = os.path.join(BASE, city, 'original')
     if not os.path.exists(outpath):
         os.mkdir(outpath)
 
-    # Iterate over each layer, download + unzip to standard naming scheme
-    for name, layer in sources['layers'].iteritems():
-        click.echo('Downloading {}...'.format(name))
-        url = layer['url']
-        click.echo(url)
-        fetcher.fetch_shapefile(url, layer['shapefile'], outpath, name)
+    # Iterate over each layer and write to file
+    for name, gdf in layers.items():
+        gdf.to_file(os.path.join(outpath, '{}.shp'.format(name)))
 
 
 @cli.command()
 @click.argument('city')
-def dem(city):
-    from shapely import geometry
-    import requests
-    '''Fetch DEM (elevation) data for the city of interest.'''
-    click.echo('Calculating extent of pedestrian features...')
+def fetch_dem(city):
+    '''Fetch DEM (elevation) data for the area of interest. Data is output to
+    cities/<city>/dem/region, where region is e.g. n48w123.
 
-    with open(os.path.join(BASE, city, 'sources.json')) as f:
-        sources = json.load(f)
+    '''
+    metadata = get_metadata(city)
+    outdir = os.path.join(BASE, city, 'dems')
+    if not os.path.exists(outdir):
+        os.mkdir(outdir)
 
-    # Base url for DEM data
-    data_url = ('https://prd-tnm.s3.amazonaws.com/StagedProducts/Elevation/13/'
-                'ArcGrid/{ns}{lat}{ew}{lon}.zip')
-    # Figure out which files are needed - get extent of shapefiles
-    layers = sources['layers'].keys()
-    inpath = os.path.join(BASE, city, 'original')
-    outpath = os.path.join(BASE, city, 'dem')
+    click.echo('Reading in vector data...')
+    layernames = metadata['layers'].keys()
+    gdfs = [get_data(city, layername, 'original') for layername in layernames]
 
-    # frames = []
-
-    boundset = []
-    for layer in layers:
-        filepath = os.path.join(inpath, '{}.shp'.format(layer))
-        frame = gpd.read_file(filepath).dropna(axis=0, subset=['geometry'])
-        crs = frame.crs
-
-        # Filter out invalid geometries
-        # FIXME: This should be done more carefully - e.g. compare data to
-        # exact dimensions of the projection
-
-        def valid(bounds, limit=1e10):
-            for bound in bounds:
-                if bound > limit or bound < (-1 * limit):
-                    return False
-            return True
-        frame = frame.loc[frame.bounds.apply(valid, axis=1)]
-        bounds = frame.geometry.total_bounds
-        boundset.append(bounds)
-
-        # frame = frame.to_crs({'init': 'epsg:4326'})
-        # frames.append(frame)
-
-    # Find the extents
-    # boundset = gpd.GeoSeries([frame.geometry.total_bounds for frame
-    #                           in frames])
-
-    # Find the bounding box of the whole thing
-    west = min([b[0] for b in boundset])
-    south = min([b[1] for b in boundset])
-    east = max([b[2] for b in boundset])
-    north = max([b[3] for b in boundset])
-
-    rect = geometry.Polygon([(west, south), (west, north), (east, north),
-                             (east, south)])
-    rectseries = gpd.GeoSeries([rect])
-    rectseries.crs = crs
-    rect = rectseries.to_crs({'init': 'epsg:4326'})[0]
-
-    # Figure out which DEMs are needed
-    regions = []
-    # NED naming scheme orders lons from negative to positive
-    for i in range(-180, 180):
-        # NED naming scheme orders lons from positive to negative
-        for j in reversed(range(-89, 91)):
-            geom = geometry.Polygon([(i, j - 1), (i, j), (i + 1, j),
-                                     (i + 1, j - 1)])
-
-            regions.append({
-                'geometry': geom,
-                'lon': abs(i),
-                'lat': abs(j),
-                'ew': 'w' if i < 0 else 'e',
-                'ns': 's' if j < 0 else 'n'
-            })
-
-    regions = gpd.GeoDataFrame(regions)
-
-    to_download = regions[regions.intersects(rect)]
-
-    # Actually download the files
-    if not os.path.exists(outpath):
-        os.mkdir(outpath)
-
-    for i, row in to_download.iterrows():
-        ns = row['ns']
-        ew = row['ew']
-        lat = row['lat']
-        lon = row['lon']
-        description = '{}{}{}{}'.format(ns, lat, ew, lon)
-        click.echo('Downloading {}...'.format(description))
-        url = data_url.format(ns=ns, ew=ew, lat=lat, lon=lon)
-        # TODO: add progress bar using stream argument + click progress bar
-        response = requests.get(url)
-        # Filter by files matching source.json layer 'shapefile' key
-        dempath = os.path.join(outpath, description)
-        if not os.path.exists(dempath):
-            os.mkdir(dempath)
-
-        zipper = zipfile.ZipFile(StringIO(response.content), 'r')
-        extract_dir = 'grd{}_13/'.format(description)
-
-        for path in zipper.namelist():
-            if extract_dir in path:
-                if extract_dir == path:
-                    continue
-                extract_path = os.path.join(dempath, os.path.basename(path))
-                with zipper.open(path) as f:
-                    with open(extract_path, 'w') as g:
-                        g.write(f.read())
+    click.echo('Downloading DEMs...')
+    dems.dem_workflow(gdfs, outdir)
 
 
-@cli.command()
-@click.argument('city')
 def standardize(city):
     click.echo('Standardizing data schema')
 
@@ -185,15 +107,13 @@ def standardize(city):
                             'dataset and streets must have primary key')
 
     click.echo('    Reading input data...')
-    inpath = os.path.join(BASE, city, 'original')
     outpath = os.path.join(BASE, city, 'standardized')
     if not os.path.exists(outpath):
         os.mkdir(outpath)
 
     frames = {}
     for layer in sources['layers'].keys():
-        path = os.path.join(inpath, '{}.shp'.format(layer))
-        frames[layer] = gpd.read_file(path)
+        frames[layer] = get_data(city, layer, 'original')
 
     click.echo('    Running standardization scripts...')
     # Standardize GeoDataFrame columns
@@ -288,22 +208,18 @@ def clean(city):
     # TODO: move this to separate function
     click.echo('Generating crossings...')
     crossings = make_crossings.make_graph(sidewalks, streets)
-    crossings.to_file(os.path.join(outpath, 'crossings.shp'))
+    if crossings.empty:
+        raise Exception('Generated no crossings')
+    else:
+        crossingspath = os.path.join(outpath, 'crossings.shp')
+        if os.path.exists(crossingspath):
+            os.remove(crossingspath)
+        crossings.to_file(crossingspath)
 
     click.echo('Writing to file...')
-    streets.to_file(os.path.join(outpath, 'streets.shp'))
     sidewalks.to_file(os.path.join(outpath, 'sidewalks.shp'))
     if 'curbramps' in frames:
         frames['curbramps'].to_file(os.path.join(outpath, 'curbramps.shp'))
-
-    # FIXME: curbramps should go through its own standardization/cleanup
-    # workflow
-    # inpath = os.path.join(BASE, city, 'original')
-    # for path in os.listdir(inpath):
-    #     filename = os.path.basename(path)
-    #     if path.split(os.extsep, 1)[0] == 'curbramps':
-    #         shutil.copy2(os.path.join(inpath, path),
-    #                      os.path.join(BASE, city, 'clean', filename))
 
 
 @cli.command()
@@ -315,32 +231,24 @@ def annotate(city):
     with open(os.path.join(BASE, city, 'sources.json')) as f:
         sources = json.load(f)
 
-        inpath = os.path.join(BASE, city, 'clean')
         frames = {}
-        layers = sources['layers'].keys()
+        layers = ['sidewalks', 'crossings']
         for layer in layers:
-            path = os.path.join(inpath, '{}.shp'.format(layer))
-            frames[layer] = gpd.read_file(path)
-        # Also add crossings...
-        frames['crossings'] = gpd.read_file(os.path.join(inpath,
-                                                         'crossings.shp'))
+            frames[layer] = get_data(city, layer, 'clean')
 
-        outpath = os.path.join(BASE, city, 'annotations')
+        # Also add crossings...
+        frames['crossings'] = get_data(city, 'crossings', 'clean')
+
         real_outpath = os.path.join(BASE, city, 'annotated')
         annotations = sources.get('annotations')
         if annotations is not None:
             click.echo('Annotating...')
-            for name, annotation in annotations.iteritems():
+            for name, annotation in annotations.items():
                 # Fetch the annotations
                 click.echo('Downloading {}...'.format(name))
                 url = annotation['url']
                 click.echo(url)
-                fetcher.fetch_shapefile(url, annotation['shapefile'], outpath,
-                                        name)
-
-                # Read the file into a GeoDataFrame
-                path = os.path.join(outpath, '{}.shp'.format(name))
-                gdf = gpd.read_file(path)
+                gdf = fetchers.fetch_shapefile(url, annotation['shapefile'])
 
                 # Reproject
                 gdf = gdf.to_crs({'init': 'epsg:26910'})
@@ -356,9 +264,17 @@ def annotate(city):
 @cli.command()
 @click.argument('city')
 @click.pass_context
+def fetch_all(ctx, city):
+    ctx.forward(fetch)
+    ctx.forward(fetch_dem)
+
+
+@cli.command()
+@click.argument('city')
+@click.pass_context
 def all(ctx, city):
     ctx.forward(fetch)
-    ctx.forward(dem)
+    ctx.forward(fetch_dem)
     ctx.forward(clean)
     ctx.forward(annotate)
 

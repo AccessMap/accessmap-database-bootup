@@ -37,10 +37,10 @@ for layerpath in cities/$city/clean/*.shp; do
 done
 
 # Run rast2pgsql on all DEMs
-for dempath in cities/$city/dem/*; do
+for dempath in cities/$city/dems/*; do
     demname=`basename $dempath`;
     echo "Translating $demname elevation data to SQL..."
-    raster2pgsql -d -t 64x64 $dempath/w001001.adf dem.$demname > "$sqldir/dem.$demname.sql"
+    raster2pgsql -d -t 64x64 $dempath dem.$demname > "$sqldir/dem.$demname.sql"
 done
 
 # Load into the database

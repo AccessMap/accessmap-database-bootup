@@ -6,5 +6,5 @@ def annotate_line_from_points(lines, points, defaults, threshold=3.5):
         line = lines.loc[query[0].object]
         if line.geometry.distance(row.geometry) < threshold:
             for default in defaults:
-                for key, value in default.iteritems():
+                for key, value in default.items():
                     lines.loc[line.name, key] = value

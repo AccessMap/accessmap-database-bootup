@@ -5,7 +5,7 @@ def _filter_columns(df, metadata):
     the metadata document (and the geometry column). Also renames those
     columns.'''
     keep_cols = []
-    for category, value in metadata.iteritems():
+    for category, value in metadata.items():
         if value['colname']:
             keep_cols.append(value['colname'])
     keep_cols.append('geometry')
@@ -28,17 +28,17 @@ def _standardize_schema(df, metadata):
     df = df.copy()
 
     # Rename the columns using the metadata object
-    rename = {v['colname']: k for k, v in metadata.iteritems()}
+    rename = {v['colname']: k for k, v in metadata.items()}
     df.rename(columns=rename, inplace=True)
 
     # Replace all values in non-geometry columns
     ignore = ['pkey', 'streets_pkey']
-    for category, data in metadata.iteritems():
+    for category, data in metadata.items():
         if category not in ignore and 'categorymap' in data:
             mask_values = []
             df[category] = df[category].astype(str)
             # Save masks with values first to avoid duplicate replacement
-            for key, value in data['categorymap'].iteritems():
+            for key, value in data['categorymap'].items():
                 mask_values.append((df[category] == str(key), value))
             # Apply masks
             for mask, value in mask_values:
@@ -121,7 +121,7 @@ def dedupe_geometries(df):
 def whitelist_filter(df, whitelists):
     # Filter via whitelists (dictionaries with key = colname, values = allowed
     # values
-    for colname, whitelist in whitelists.iteritems():
+    for colname, whitelist in whitelists.items():
         if colname in df.columns:
             df = df.loc[df[colname].isin(whitelist)]
 
