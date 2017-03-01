@@ -109,12 +109,12 @@ def process_cyclic(G):
     while True:
         # Pick the next edge (or random - there's no strategy here)
         try:
-            edge = G.edges_iter().next()
+            edge = next(G.edges_iter())
         except StopIteration:
             break
         # Start traveling
         paths.append(find_path(G, edge[0], edge[1]))
-        G.remove_nodes_from(nx.isolates(G))
+        # G.remove_nodes_from(nx.isolates(G))
     return paths
 
 
@@ -148,11 +148,12 @@ def find_path(G, e1, e2):
         nodes_out = [node for node in G.successors(e2) if node != e1]
         n = len(nodes_out)
 
-        e1 = e2
         if n == 0:
             # Terminal node reached - could also by cycle (if traveled node
             # was removed)
             break
+
+        e1 = e2
 
         if n == 1:
             # There's only one choice! Skip azimuth math.
