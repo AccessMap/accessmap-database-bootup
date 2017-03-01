@@ -14,22 +14,35 @@ def create_graph(path, precision=1):
     will store a clockwise ordering of incoming edges.
 
     '''
-    # TODO: roll our own nx.read_shp that removes data we don't need from the
-    # get-go (and potentially groups nodes at the same time).
     gdf = gpd.read_file(path)
+    # The geometries sometimes have tiny end parts - get rid of those!
+    gdf.geometry = gdf.geometry.simplify(0.05)
 
     G = nx.DiGraph()
+
+    # TODO: converting to string is probably unnecessary - keeping float may be
+    # faster
+    def make_node(coord, precision):
+        x1, x2 = np.round(coord, precision)
+        return '({},{})'.format(str(x1), str(x2))
+
     # Edges are stored as (from, to, data), where from and to are nodes.
-    for idx, row in gdf.iterrows():
+    # az1 is the azimuth of the first segment of the geometry (point into the
+    # geometry), az2 is for the last segment (pointing out of the geometry)
+    def add_edges(row, G):
         geom = row.geometry
-        start = tuple(np.round(geom.coords[0], precision))
-        end = tuple(np.round(geom.coords[-1], precision))
+        coords = list(geom.coords)
+        geom_r = geometry.LineString(coords[::-1])
+        coords_r = geom_r.coords
+        start = make_node(coords[0], precision)
+        end = make_node(coords[-1], precision)
 
         # Add forward edge
         fwd_attr = {
             'forward': 1,
             'geometry': geom,
-            'azimuth': azimuth(geom.coords[-2], geom.coords[-1]),
+            'az1': azimuth(coords[0], coords[1]),
+            'az2': azimuth(coords[-2], coords[-1]),
             'sidewalk': row.sw_right,
             'id': row.id
         }
@@ -38,12 +51,15 @@ def create_graph(path, precision=1):
         # Add reverse edge
         rev_attr = {
             'forward': 0,
-            'geometry': geometry.LineString(geom.coords[::-1]),
-            'azimuth': azimuth(geom.coords[1], geom.coords[0]),
+            'geometry': geom_r,
+            'az1': azimuth(coords_r[0], coords_r[1]),
+            'az2': azimuth(coords_r[-2], coords_r[-1]),
             'sidewalk': row.sw_left,
             'id': row.id
         }
         G.add_edge(end, start, rev_attr)
+
+    gdf.apply(add_edges, axis=1, args=[G])
 
     return G
 
@@ -53,10 +69,34 @@ def process_acyclic(G):
     while True:
         # Handle 'endpoint' starts - certainly acyclic
         n = len(paths)
-        for node, degree in G.out_degree().items():
-            if degree == 1:
-                # Start traveling
-                paths.append(find_path(G, node))
+        # We want to start with a dangling node - an edge that terminates.
+        # Features of that dangling node:
+        #   1) degree of node inputs is 1 or 0
+        #   2) degree of node outputs is 1.
+        #   3) if degree of node inputs is 1, the input to the node is the
+        #      output to the node.
+
+        # Identify candidates first - don't want to create/remove candidates
+        # by updating at the same time
+        candidates = []
+        for node in G.nodes_iter():
+            predecessors = G.predecessors(node)
+            successors = G.successors(node)
+            in_degree = len(predecessors)
+            out_degree = len(successors)
+
+            if out_degree == 1:
+                if in_degree == 0:
+                    candidates.append(node)
+                elif in_degree == 1:
+                    if successors == predecessors:
+                        candidates.append(node)
+
+        # Create paths for every candidate
+        for candidate in candidates:
+            # If this point is reached, it's a dangle!
+            paths.append(find_path(G, candidate, G[candidate].keys()[0]))
+
         G.remove_nodes_from(nx.isolates(G))
         if n == len(paths):
             # No change since last pass = exhausted attempts
@@ -64,67 +104,73 @@ def process_acyclic(G):
     return paths
 
 
-def process_cyclic(graph):
+def process_cyclic(G):
     paths = []
     while True:
         # Pick the next edge (or random - there's no strategy here)
         try:
-            edge = graph.edges_iter().next()
+            edge = G.edges_iter().next()
         except StopIteration:
             break
         # Start traveling
-        node = edge[0]
-        paths.append(find_path(graph, node))
+        paths.append(find_path(G, edge[0], edge[1]))
+        G.remove_nodes_from(nx.isolates(G))
     return paths
 
 
-def find_path(graph, node):
-    '''Given a starting node, travel until one of the following conditions is
-    met:
+def find_path(G, e1, e2):
+    '''Given a starting edge (e1, e2), travel until one of the following
+    conditions is met:
     1) The path terminates (node degree 1)
     2) A node has been revisited (cycle)
+
+    It's assumed that edge (e1, e2) actually exists in the graph.
 
     '''
     path = []
 
     def ccw_dist(az1, az2):
-        # az1 is azimuth of interest, az2 is for comparison. The vectors az1
-        # and az2 are connected - az2 begins where az1 ends. Therefore, if az1
-        # is 0, an az2 that's likely to be closest in counterclockwise
-        # direction will be slightly smaller than pi
-        # For the returned value, a smaller value = closer in the
-        # counterclockwise direction
         diff = (az1 + np.pi) % (2 * np.pi) - az2
         if diff < 0:
             diff += 2 * np.pi
         return diff
 
     # Travel the first edge
-    next_node, edge_attr = graph[node].items()[0]
+    edge_attr = G[e1][e2]
     path.append(edge_attr)
-    graph.remove_edge(node, next_node)
+    G.remove_edge(e1, e2)
     while True:
-        # Choose the next edge - the nearest clockwise edge
-        az = edge_attr['azimuth']
-        if graph.out_degree(next_node) == 1:
-            # This is a terminal node for our purposes - we're reversing course
-            # and would revisit the previous node.
-            break
-        edges_out = graph[next_node].items()
-        # Don't retravel previous edge
-        edges_out = [e for e in edges_out if e[0] != node]
-        if not edges_out:
-            # Terminal node reached
-            break
-        node = next_node
+        # Want to avoid two things:
+        # 1) traveling the same edge again
+        # 2) revisiting the last-visited node (doubling back)
 
-        next_node, edge_attr = min(edges_out,
-                                   key=lambda x: ccw_dist(az, x[1]['azimuth']))
-        if edge_attr in path:
-            # We've visited this edge before - cycle reached
+        # Prevent doubling back to the same node
+        nodes_out = [node for node in G.successors(e2) if node != e1]
+        n = len(nodes_out)
+
+        e1 = e2
+        if n == 0:
+            # Terminal node reached - could also by cycle (if traveled node
+            # was removed)
             break
+
+        if n == 1:
+            # There's only one choice! Skip azimuth math.
+            e2 = nodes_out[0]
+            edge_attr = G[e1][e2]
+        else:
+            # Get the nearest counterclockwise edge - i.e. make rightmost turn.
+            az = edge_attr['az2']
+            attrs = [(node, G[e1][node]) for node in nodes_out]
+            e2, edge_attr = min(attrs,
+                                key=lambda x: ccw_dist(az, x[1]['az1']))
+
+        # Avoid traveling the same edge again
+        if edge_attr in path:
+            break
+
         path.append(edge_attr)
-        graph.remove_edge(node, next_node)
+        G.remove_edge(e1, e2)
 
     return path
 
@@ -138,23 +184,9 @@ def path_to_geom(path):
 
 
 def graph_workflow(path):
-    orig = gpd.read_file(path)
-    graph = create_graph(path)
-    acyclic_paths = process_acyclic(graph)
-    cyclic_paths = process_cyclic(graph)
-    paths = []
-    for i, p in enumerate(acyclic_paths + cyclic_paths):
-        datalist = []
-        for edge in p:
-            orig_row = orig.loc[orig['id'] == edge['id']]
-            if edge['forward']:
-                sidewalk = orig_row.iloc[0]['sw_right']
-            else:
-                sidewalk = orig_row.iloc[0]['sw_left']
-            datalist.append({
-                'geometry': edge['geometry'],
-                'sidewalk': sidewalk
-            })
-        paths.append(datalist)
+    G = create_graph(path)
+    acyclic_paths = process_acyclic(G)
+    cyclic_paths = process_cyclic(G)
+    paths = acyclic_paths + cyclic_paths
 
     return paths
