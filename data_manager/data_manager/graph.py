@@ -23,8 +23,7 @@ def create_graph(path, precision=1):
     # TODO: converting to string is probably unnecessary - keeping float may be
     # faster
     def make_node(coord, precision):
-        x1, x2 = np.round(coord, precision)
-        return '({},{})'.format(str(x1), str(x2))
+        return tuple(np.round(coord, precision))
 
     # Edges are stored as (from, to, data), where from and to are nodes.
     # az1 is the azimuth of the first segment of the geometry (point into the
@@ -43,7 +42,7 @@ def create_graph(path, precision=1):
             'geometry': geom,
             'az1': azimuth(coords[0], coords[1]),
             'az2': azimuth(coords[-2], coords[-1]),
-            'sidewalk': row.sw_right,
+            'offset': row.sw_right,
             'id': row.id
         }
         G.add_edge(start, end, fwd_attr)
@@ -54,7 +53,7 @@ def create_graph(path, precision=1):
             'geometry': geom_r,
             'az1': azimuth(coords_r[0], coords_r[1]),
             'az2': azimuth(coords_r[-2], coords_r[-1]),
-            'sidewalk': row.sw_left,
+            'offset': row.sw_left,
             'id': row.id
         }
         G.add_edge(end, start, rev_attr)
@@ -95,7 +94,7 @@ def process_acyclic(G):
         # Create paths for every candidate
         for candidate in candidates:
             # If this point is reached, it's a dangle!
-            paths.append(find_path(G, candidate, G[candidate].keys()[0]))
+            paths.append(find_path(G, candidate, list(G[candidate])[0]))
 
         G.remove_nodes_from(nx.isolates(G))
         if n == len(paths):
@@ -113,12 +112,12 @@ def process_cyclic(G):
         except StopIteration:
             break
         # Start traveling
-        paths.append(find_path(G, edge[0], edge[1]))
+        paths.append(find_path(G, edge[0], edge[1], cyclic=True))
         # G.remove_nodes_from(nx.isolates(G))
     return paths
 
 
-def find_path(G, e1, e2):
+def find_path(G, e1, e2, cyclic=False):
     '''Given a starting edge (e1, e2), travel until one of the following
     conditions is met:
     1) The path terminates (node degree 1)
@@ -127,7 +126,9 @@ def find_path(G, e1, e2):
     It's assumed that edge (e1, e2) actually exists in the graph.
 
     '''
-    path = []
+    path = {}
+    path['edges'] = []
+    path['nodes'] = []
 
     def ccw_dist(az1, az2):
         diff = (az1 + np.pi) % (2 * np.pi) - az2
@@ -137,7 +138,9 @@ def find_path(G, e1, e2):
 
     # Travel the first edge
     edge_attr = G[e1][e2]
-    path.append(edge_attr)
+    path['edges'].append(edge_attr)
+    path['nodes'].append(e1)
+    path['nodes'].append(e2)
     G.remove_edge(e1, e2)
     while True:
         # Want to avoid two things:
@@ -166,20 +169,30 @@ def find_path(G, e1, e2):
             e2, edge_attr = min(attrs,
                                 key=lambda x: ccw_dist(az, x[1]['az1']))
 
-        # Avoid traveling the same edge again
-        if edge_attr in path:
-            break
-
-        path.append(edge_attr)
+        path['edges'].append(edge_attr)
+        path['nodes'].append(e2)
         G.remove_edge(e1, e2)
+
+        if cyclic:
+            # If this node has been visited before, we've traveled a cycle
+            # should stop after traveling this edge
+            if e2 == path['nodes'][0]:
+                break
+        # If path was not cyclic, it will terminate when another terminal
+        # edge is found.
+
+    if path['nodes'][0] == path['nodes'][-1]:
+        path['cyclic'] = True
+    else:
+        path['cyclic'] = False
 
     return path
 
 
 def path_to_geom(path):
     coords = []
-    coords.append(path[0]['geometry'].coords[0])
-    for p in path:
+    coords.append(path['edges'][0]['geometry'].coords[0])
+    for p in path['edges']:
         coords += p['geometry'].coords[1:]
     return geometry.LineString(coords)
 
