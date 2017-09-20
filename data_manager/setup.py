@@ -28,6 +28,7 @@ config = {
     'install_requires': ['click',
                          'geopandas',
                          'numpy',
+                         'rasterio',
                          'requests',
                          'rtree',
                          'Shapely'],

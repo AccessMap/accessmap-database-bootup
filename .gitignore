@@ -4,6 +4,5 @@ notebooks/output
 notebooks/sourcedata
 notebooks/venv
 pgsql_data
-data_manager/cities/*
 data_manager/pgsql_data
 venv
