@@ -29,3 +29,10 @@ CREATE INDEX routing_index
        USING gist(geom);
 
 SELECT pgr_createTopology('routing', 1e-6, 'geom', clean:=true);
+
+-- Create 'noded' version of network: all intersecting paths are now connected
+-- Can make more sense for some analyses, given imperfect footpath data.
+
+DROP TABLE IF EXISTS routing_noded;
+SELECT pgr_nodeNetwork('routing', 1e-6, the_geom:='geom');
+SELECT pgr_createTopology('routing_noded', 1e-6, 'geom', clean:=true);
