@@ -179,12 +179,21 @@ def dem_workflow(gdfs, outdir, wgs84=False):
             if wgs84:
                 dem_to_wgs84(dem, path, 1.0)
             else:
+                bounds = dem.bounds
                 kwargs = {
                     'width': dem.width,
                     'height': dem.height,
                     'count': dem.count,
                     'dtype': dem.dtypes[0],
-                    'transform': Affine.identity(),
+                    'transform': Affine(
+                      (bounds.right - bounds.left) / dem.width,
+                      0,
+                      bounds.left,
+                      0,
+                      -1 * (bounds.top - bounds.bottom) / dem.height,
+                      bounds.top
+                    ),
+                    'crs': dem.crs,
                     'driver': 'GTiff',
                     'compress': 'lzw'
                 }

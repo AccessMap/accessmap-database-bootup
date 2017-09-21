@@ -38,7 +38,7 @@ done
 
 # Run rast2pgsql on all DEMs
 for dempath in cities/$city/dems/*; do
-    demname=`basename $dempath`;
+    demname=`basename $dempath .tif`;
     echo "Translating $demname elevation data to SQL..."
     raster2pgsql -d -t 64x64 $dempath dem.$demname > "$sqldir/dem.$demname.sql"
 done

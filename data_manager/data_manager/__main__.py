@@ -30,11 +30,17 @@ def get_data(city, layername, category):
     return gpd.read_file(path)
 
 
-def put_data(gdf, city, layername, category):
+def put_data(gdf, city, layername, category, delete=False):
     directory = os.path.join(BASE, city, category)
     if not os.path.exists(directory):
         os.mkdir(directory)
-    gdf.to_file(os.path.join(directory, '{}.shp'.format(layername)))
+
+    writepath = os.path.join(directory, '{}.shp'.format(layername))
+    # write to temp dir and then move? Prevents loss of old data if write fails
+    if delete:
+        if os.path.exists(writepath):
+            os.remove(directory)
+    gdf.to_file(writepath)
 
 
 @click.group()
@@ -49,14 +55,9 @@ def fetch(city):
     # directory structure under cities/<city>/original/layername.shp
     metadata = get_metadata(city)
     layers = fetchers.fetch(metadata)
-
-    outpath = os.path.join(BASE, city, 'original')
-    if not os.path.exists(outpath):
-        os.mkdir(outpath)
-
     # Iterate over each layer and write to file
     for name, gdf in layers.items():
-        gdf.to_file(os.path.join(outpath, '{}.shp'.format(name)))
+        put_data(gdf, city, name, 'original')
 
 
 @cli.command()
@@ -182,7 +183,6 @@ def standardize(city):
 @click.argument('city')
 def clean(city):
     frames = standardize(city)
-    outpath = os.path.join(BASE, city, 'clean')
     # if not os.path.exists(outpath):
     #     os.mkdir(outpath)
 
@@ -211,15 +211,12 @@ def clean(city):
     if crossings.empty:
         raise Exception('Generated no crossings')
     else:
-        crossingspath = os.path.join(outpath, 'crossings.shp')
-        if os.path.exists(crossingspath):
-            os.remove(crossingspath)
-        crossings.to_file(crossingspath)
+        put_data(crossings, city, 'crossings', 'clean')
 
     click.echo('Writing to file...')
-    sidewalks.to_file(os.path.join(outpath, 'sidewalks.shp'))
+    put_data(sidewalks, city, 'sidewalks', 'clean')
     if 'curbramps' in frames:
-        frames['curbramps'].to_file(os.path.join(outpath, 'curbramps.shp'))
+        put_data(frames['curbramps'], city, 'curbramps', 'clean')
 
 
 @cli.command()
@@ -239,7 +236,6 @@ def annotate(city):
         # Also add crossings...
         frames['crossings'] = get_data(city, 'crossings', 'clean')
 
-        real_outpath = os.path.join(BASE, city, 'annotated')
         annotations = sources.get('annotations')
         if annotations is not None:
             click.echo('Annotating...')
@@ -257,8 +253,7 @@ def annotate(city):
                 # FIXME: hard-coded sidewalks here
                 annotate_line_from_points(frames['crossings'], gdf,
                                           annotation['default_tags'])
-                frames['crossings'].to_file(os.path.join(real_outpath,
-                                                         'crossings.shp'))
+                put_data(frames['crossings'], city, 'crossings', 'annotated')
 
 
 @cli.command()

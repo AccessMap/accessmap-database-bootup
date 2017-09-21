@@ -6,10 +6,6 @@ CREATE SCHEMA IF NOT EXISTS source;
 CREATE SCHEMA IF NOT EXISTS data;
 CREATE SCHEMA IF NOT EXISTS build;
 
-CREATE INDEX streets_index
-          ON streets
-       USING gist(geom);
-
 CREATE INDEX sidewalks_index
           ON sidewalks
        USING gist(geom);

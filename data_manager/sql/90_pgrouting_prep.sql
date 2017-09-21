@@ -28,4 +28,4 @@ CREATE INDEX routing_index
           ON routing
        USING gist(geom);
 
-SELECT pgr_createTopology('routing', 0.00001, 'geom', 'id');
+SELECT pgr_createTopology('routing', 1e-6, 'geom', clean:=true);
